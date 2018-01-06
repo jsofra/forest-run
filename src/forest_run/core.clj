@@ -14,28 +14,22 @@
 
 (def starting-deck (clojure.set/difference deck (conj starting-hand player-card)))
 
-(defn shuffled-deck
-  ([] (shuffled-deck 3))
-  ([look-ahead]
-   (->> starting-deck
-        shuffle
-        (partition 3)
-        (mapv vec)
-        (partition look-ahead)
-        (mapv vec))))
+(defn shuffled-deck []
+  (->> starting-deck
+       shuffle
+       (partition 3)
+       (mapv vec)))
 
-(defn lookup-card [deck turn pos]
-  (get-in deck (into [turn] (if pos (reverse pos) [nil]))))
+(defn lookup-card [deck pos]
+  (get-in deck (if pos (reverse pos) [nil])))
 
-(defn update-card [deck turn pos card]
-  (if (lookup-card deck turn pos)
-    (assoc-in deck (into [turn] (reverse pos)) card)
+(defn update-card [deck pos card]
+  (if (lookup-card deck pos)
+    (assoc-in deck (reverse pos) card)
     deck))
 
-(def zero-segment
-  [[0 0 0]
-   [0 0 0]
-   [0 0 0]])
+(defn dimensions [matrix]
+  [(count (first matrix)) (count matrix)])
 
 (def re-attack
   [[0 0 0 0 0]
@@ -51,43 +45,70 @@
    [0 2 2 2 0]
    [1 0 1 0 1]])
 
+(defn indices [matrix]
+  (let [[w h] (dimensions matrix)]
+    (->> (for [y (range h)
+               x (range w)]
+           [x y])
+         (partition w)
+         (mapv #(into [] %)))))
+
+(defn attack-indices [attack]
+  (let [offset (->> (dimensions attack)
+                    (map #(int (/ % 2))))]
+    (zipmap (->> (indices attack)
+                 (apply concat)
+                 (mapv (fn [i]
+                         (mapv - i offset))))
+            (apply concat attack))))
+
 (def avatar-moves
-  {:nw [-1 -1] :n [0  -1] :ne [1 -1]
-   :w  [-1  0]            :e  [1  0]})
+  {:nw [1 1] :n [0  1] :ne [-1 1]
+   :w  [1 0]           :e  [-1 0]})
 
 (def attacks
   {:re      re-attack
    :cavallo cavallo-attack})
 
-(defn accum-score-segment
-  [segment [[x-offset y-offset] accum-segment]]
-  (let [x-offset (- (count (first segment)) (inc x-offset))
-        y-offset (- (count segment) (inc y-offset))]
-    (mapv #(mapv + %1 (drop x-offset %2))
-          segment (drop y-offset accum-segment))))
+(defn i->xy [matrix i]
+  (let [[w _] (dimensions matrix)]
+    [(mod i w) (int (/ i w))]))
 
-(defn i->xy [segment i]
-  [(mod i (count segment)) (int (/ i (count (first segment))))])
-
-(defn segment-attacks [segment]
+(defn segment-attacks [idx segment]
   (->> segment
        flatten
-       (map-indexed (fn [i {r :rank}] [i r]))
+       (map-indexed (fn [i {rank :rank}] [i rank]))
        (filter #((set (keys attacks)) (second %)))
-       (map (fn [[i r]] [(i->xy segment i) (r attacks)]))))
+       (mapv (fn [[i rank]]
+               [(update (i->xy deck i) 1 + (* 3 idx))
+                (rank attacks)]))))
 
-(defn combined-segment-attacks [segment]
-  (reduce accum-score-segment zero-segment (segment-attacks segment)))
+(defn deck-attacks [deck]
+  (->> (partition 3 deck)
+       (map-indexed (partial segment-attacks))
+       (apply concat)))
 
-(defn turn-costs [segment moves]
-  {:water   (count moves)
-   :food    (int (/ (count moves) 2))
-   :attacks (map #(get-in (combined-segment-attacks segment) (reverse %)) moves)})
+(defn zero-attack-deck [deck]
+  (let [[w h] (dimensions deck)]
+    (mapv vec (partition w (repeat (* w h) 0)))))
 
-(defn valid-positions [segment]
-  (set (for [y (range (count segment))
-             x (range (count (first segment)))]
-         [x y])))
+(defn apply-attack [deck [pos attack]]
+  (reduce (fn [d [idx atk]]
+            (let [pos (reverse (map + idx pos))]
+              (if (get-in d pos nil)
+                (update-in d pos + atk)
+                d)))
+          deck (attack-indices attack)))
+
+(defn apply-attacks [deck]
+  (reduce apply-attack
+          (zero-attack-deck deck)
+          (deck-attacks deck)))
+
+#_(defn turn-costs [segment moves]
+    {:water   (count moves)
+     :food    (int (/ (count moves) 2))
+     :attacks (map #(get-in (combined-segment-attacks segment) (reverse %)) moves)})
 
 (defn hand-with-strengths [hand]
   (->> hand
@@ -95,38 +116,44 @@
        (mapv #(assoc % :strength (face-values (or (-> % :trade :rank)
                                                   (-> % :rank)))))))
 
-(defn all-possible-moves [valid-positions position]
-  (reduce-kv (fn [m k v]
-               (let [move (mapv + v position)]
-                 (if (valid-positions move)
-                   (assoc m k move)
-                   m)))
-             {} avatar-moves))
+(defn valid-positions [history deck]
+  (clojure.set/difference
+   (set (apply concat (indices deck)))
+   (set (map :position history))))
 
-(defn moves [{:keys [deck turn position hand] :as state}]
-  (let [segment         (nth deck turn)
-        valid-positions (valid-positions segment)
-        attacks         (combined-segment-attacks segment)
-        all-moves       (all-possible-moves valid-positions position)
-        valid-move?     (fn [[k v]]
-                          (<= (get-in attacks (reverse v))
-                              (reduce + (map :strength hand))))]
+(defn all-possible-moves [history deck position]
+  (let [valid-positions (valid-positions history deck)]
+    (reduce-kv (fn [m k v]
+                 (let [move (mapv + v position)]
+                   (if (valid-positions move)
+                     (assoc m k move)
+                     m)))
+               {} avatar-moves)))
+
+(defn moves [history]
+  (let [{:keys [deck turn position hand] :as state} (last history)
+        attacks     (apply-attacks deck)
+        all-moves   (all-possible-moves history deck position)
+        valid-move? (fn [[k v]]
+                      (<= (get-in attacks (reverse v))
+                          (reduce + (map :strength hand))))]
     {:moves/valid   (into {} (filter valid-move? all-moves))
      :moves/invalid (into {} (remove valid-move? all-moves))}))
 
-(defn make-move [{:keys [deck turn position hand] :as state}
-                 move
-                 {:keys [trade]}]
-  (let [target (lookup-card deck turn move)
+(defn make-move [history move {:keys [trade]}]
+  (let [{:keys [deck turn position hand] :as state} (last history)
+
+        target (lookup-card deck turn move)
         action (cond
                  (#{:cavallo :re} (:rank target)) :action/attack
                  (= (:rank target) :fante)        :action/trade
                  :else                            :action/collect)]
-    (-> state
-        (assoc :action   action
-               :position move
-               :deck     (-> deck
-                             (update-card turn move player-card)
-                             (update-card turn position {:action action})))
-        (cond-> (= action :action/collect)
-          (update :hand conj target)))))
+    (conj history
+          (-> state
+              (assoc :action   action
+                     :position move
+                     :deck     (-> deck
+                                   (update-card turn move player-card)
+                                   (update-card turn position {:action action})))
+              (cond-> (= action :action/collect)
+                (update :hand conj target))))))
