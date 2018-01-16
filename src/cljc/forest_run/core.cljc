@@ -1,4 +1,5 @@
-(ns forest-run.core)
+(ns forest-run.core
+  (:require [clojure.set :as clojure.set]))
 
 (def ranks  [:uno :due :tre :quattro :cinque :sei :sette :fante :cavallo :re])
 
@@ -16,6 +17,7 @@
 
 (defn shuffled-deck []
   (->> starting-deck
+       (map #(assoc % :revealed false))
        shuffle
        (partition 3)
        (mapv vec)))
@@ -141,9 +143,8 @@
      :moves/invalid (into {} (remove valid-move? all-moves))}))
 
 (defn make-move [history move {:keys [trade]}]
-  (let [{:keys [deck turn position hand] :as state} (last history)
-
-        target (lookup-card deck turn move)
+  (let [{:keys [deck position hand] :as state} (last history)
+        target (lookup-card deck move)
         action (cond
                  (#{:cavallo :re} (:rank target)) :action/attack
                  (= (:rank target) :fante)        :action/trade
@@ -153,7 +154,12 @@
               (assoc :action   action
                      :position move
                      :deck     (-> deck
-                                   (update-card turn move player-card)
-                                   (update-card turn position {:action action})))
+                                   (update-card move player-card)
+                                   (update-card position {:action action})))
               (cond-> (= action :action/collect)
                 (update :hand conj target))))))
+
+(defn init-game-state []
+  [{:deck     (shuffled-deck)
+    :hand     starting-hand
+    :position [1 -1]}])
