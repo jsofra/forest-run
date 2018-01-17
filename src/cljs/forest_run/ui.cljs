@@ -10,29 +10,40 @@
 (def card-size [122 200])
 (def card-spacing 8)
 
-(defmethod impi/update-prop! :pixi.object/skew [object _ _ [x y]]
-  (.set (.-skew object) x y))
+(defmethod impi/update-prop! :card/rotation [object _ _ rotation]
+  (.set (.-skew object) 0 (* rotation js/PIXI.DEG_TO_RAD)))
 
-(defn render-card [{:keys [rank suit revealed] :as card} pos]
+(defmethod impi/update-prop! :pixi.sprite/tint [object _ _ tint]
+  (set! (.-tint object) tint))
+
+(defn render-card [{:keys [rank suit] :as card} pos revealed]
   (let [card-name (keyword (str (name rank) "-" (name suit)))]
     {:impi/key                 card-name
      :pixi.object/type         :pixi.object.type/sprite
      :pixi.object/position     pos
-     :pixi.object/skew         [0 (* 45 js/PIXI.DEG_TO_RAD)]
+     :card/rotation            0
      :pixi.sprite/anchor       [0.5 0.5]
+     :pixi.sprite/tint         0xFFFFFF
      :pixi.object/interactive? true
      :pixi.event/click         [:card-click card-name]
      :pixi.sprite/texture
-     {:pixi.texture/source (if true #_revealed
-                               (str "img/imgc/" (name card-name) ".png")
-                               (str "img/imgc/back.png"))}}))
+     {:pixi.texture/source (if revealed
+                               (str "img/" (name card-name) ".png")
+                               (str "img/back.png"))}}))
 
-(defn render-deck [deck]
-  (vec (flatten (for [[r-idx row] (map-indexed vector deck)]
-                  (for [[c-idx card] (map-indexed vector row)]
-                    (render-card card (mapv #(* %1 (+ %2 card-spacing))
-                                            [c-idx r-idx]
-                                            card-size)))))))
+(defn render-deck [{:keys [deck position]}]
+  (let [[c r] position]
+    (->> (for [[r-idx row] (map-indexed vector (take 2 (drop r (reverse deck))))]
+           (for [[c-idx card] (map-indexed vector (reverse row))]
+             (do (println c-idx r-idx)
+                 (render-card card
+                              (mapv #(* %1 (+ %2 card-spacing))
+                                    [c-idx r-idx]
+                                    card-size)
+                              (not= r-idx 0)))))
+         flatten
+         (map (fn [card] [(:impi/key card) card]))
+         (into {}))))
 
 (def canvas-size 800)
 
@@ -42,6 +53,18 @@
 (defn update-stage-pos!
   [delta]
   (swap! gui-state update-in [:pixi/stage :pixi.object/position] #(mapv + % delta)))
+
+(defn update-card!
+  [id]
+  (swap! gui-state
+         update-in
+         [:pixi/stage
+          :pixi.container/children
+          :deck
+          :pixi.container/children
+          id
+          :card/rotation]
+         inc))
 
 (defn init-stage! []
   (reset!
@@ -56,7 +79,7 @@
                      (when (and (not (zero? (.-buttons event)))
                                 (not (zero? (.-movementY event))))
                        (update-stage-pos! [0 (.-movementY event)]))))
-     :card-click (fn [_ id] (prn :click id))}
+     :card-click (fn [_ id] (update-card! id))}
     :pixi/stage
     {:impi/key                 :stage
      :pixi.object/type         :pixi.object.type/container
@@ -67,13 +90,13 @@
      {:deck
       {:impi/key                :deck
        :pixi.object/type        :pixi.object.type/container
-       :pixi.container/children (render-deck (-> @game-state last :deck))}}}}))
+       :pixi.container/children (render-deck (last @game-state))}}}}))
 
 (defn update-gui-state! [game-state]
   (swap! gui-state
          update-in
          [:pixi/stage :deck :pixi.container/children]
-         #(render-deck (-> game-state last :deck))))
+         #(render-deck (last game-state))))
 
 (let [element (.getElementById js/document "app")]
   (impi/mount :game @gui-state element)
