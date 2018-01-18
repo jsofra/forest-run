@@ -1,51 +1,53 @@
 (ns forest-run.ui
-  (:require [impi.core :as impi]
+  (:require [forest-run.impi]
+            [impi.core :as impi]
             [forest-run.core :as core]))
 
 (enable-console-print!)
 
-(defmethod impi/update-prop! :pixi.event/mouse-move [object index _ listener]
-  (impi/replace-listener object "mousemove" index listener))
-
 (def card-size [122 200])
 (def card-spacing 8)
 
-(defmethod impi/update-prop! :card/rotation [object _ _ rotation]
-  (.set (.-skew object) 0 (* rotation js/PIXI.DEG_TO_RAD)))
-
-(defmethod impi/update-prop! :pixi.sprite/tint [object _ _ tint]
-  (set! (.-tint object) tint))
-
-(defn render-card [{:keys [rank suit] :as card} pos revealed]
+(defn render-card [{:keys [rank suit] :as card} pos index revealed]
   (let [card-name (keyword (str (name rank) "-" (name suit)))]
     {:impi/key                 card-name
      :pixi.object/type         :pixi.object.type/sprite
      :pixi.object/position     pos
      :card/rotation            0
+     :game/index               index
      :pixi.sprite/anchor       [0.5 0.5]
      :pixi.sprite/tint         0xFFFFFF
      :pixi.object/interactive? true
-     :pixi.event/click         [:card-click card-name]
+     :pixi.event/click         [:card-click index]
      :pixi.sprite/texture
      {:pixi.texture/source (if revealed
-                               (str "img/" (name card-name) ".png")
-                               (str "img/back.png"))}}))
+                             (str "img/" (name card-name) ".png")
+                             (str "img/back.png"))}}))
 
 (defn render-deck [{:keys [deck position]}]
-  (let [[c r] position]
-    (->> (for [[r-idx row] (map-indexed vector (take 2 (drop r (reverse deck))))]
-           (for [[c-idx card] (map-indexed vector (reverse row))]
-             (do (println c-idx r-idx)
-                 (render-card card
-                              (mapv #(* %1 (+ %2 card-spacing))
-                                    [c-idx r-idx]
-                                    card-size)
-                              (not= r-idx 0)))))
+  (let [[c r] position
+        card-pos (fn [c-idx r-idx]
+                   (mapv #(* %1 (+ %2 card-spacing))
+                         [(Math/abs (- c-idx 2)) (* r-idx -1)]
+                         card-size))]
+    (->> (for [[r-idx row] (map-indexed vector deck)]
+           (for [[c-idx card] (map-indexed vector row)]
+             (render-card card
+                          (card-pos c-idx r-idx)
+                          [c-idx r-idx]
+                          (<= r-idx (inc r)))))
          flatten
-         (map (fn [card] [(:impi/key card) card]))
-         (into {}))))
+         (map (fn [card] [(:game/index card) card]))
+         (into {position (-> (render-card core/player-card
+                                          (card-pos c r)
+                                          position
+                                          true)
+                             (assoc :pixi.event/pointer-down [:player-down position])
+                             (assoc :pixi.event/pointer-up   [:player-up position])
+                             (assoc :pixi.event/pointer-up-outside [:player-up position])
+                             (dissoc :pixi.event/click))}))))
 
-(def canvas-size 800)
+(def canvas-size [800 1000])
 
 (defonce gui-state (atom nil))
 (defonce game-state (atom (core/init-game-state)))
@@ -54,36 +56,73 @@
   [delta]
   (swap! gui-state update-in [:pixi/stage :pixi.object/position] #(mapv + % delta)))
 
+(defn update-card
+  [state id prop update-fn]
+  (update-in state
+             [:pixi/stage
+              :pixi.container/children
+              :deck
+              :pixi.container/children
+              id
+              prop]
+             update-fn))
+
 (defn update-card!
-  [id]
-  (swap! gui-state
-         update-in
-         [:pixi/stage
-          :pixi.container/children
-          :deck
-          :pixi.container/children
-          id
-          :card/rotation]
-         inc))
+  [idx prop update-fn]
+  (swap! gui-state update-card idx prop update-fn))
+
+(defn update-card-tints
+  [update-fn state idxs tint]
+  (reduce (fn [accum-state idx]
+            (update-card accum-state
+                         idx
+                         :pixi.sprite/tint
+                         #(update-fn % tint)))
+          state
+          idxs))
+
+(def add-card-tints (partial update-card-tints +))
+(def sub-card-tints (partial update-card-tints -))
+
+(def valid-move-tint (- 0x99ff99 0xFFFFFF))
+(def invalid-move-tint (- 0xffb2b2 0xFFFFFF))
+
+(defn update-move-tints
+  [state tint-fn]
+  (let [{:moves/keys [valid invalid]} (core/moves @game-state)
+        valid-idxs                    (vals valid)
+        invalid-idxs                  (vals invalid)]
+    (-> state
+        (tint-fn valid-idxs valid-move-tint)
+        (tint-fn invalid-idxs invalid-move-tint))))
 
 (defn init-stage! []
   (reset!
    gui-state
    {:pixi/renderer
-    {:pixi.renderer/size             [canvas-size canvas-size]
+    {:pixi.renderer/size             canvas-size
      :pixi.renderer/background-color 0x0a1c5e
      :pixi.renderer/transparent?     false}
     :pixi/listeners
-    {:mouse-move (fn [x]
-                   (let [event (-> x .-data .-originalEvent)]
-                     (when (and (not (zero? (.-buttons event)))
-                                (not (zero? (.-movementY event))))
-                       (update-stage-pos! [0 (.-movementY event)]))))
-     :card-click (fn [_ id] (update-card! id))}
+    {:mouse-move
+     (fn [x]
+       (let [event (-> x .-data .-originalEvent)]
+         (when (and (not (zero? (.-buttons event)))
+                    (not (zero? (.-movementY event))))
+           (update-stage-pos! [0 (.-movementY event)]))))
+     :card-click
+     (fn [_ id] (update-card! id :card/rotation inc))
+     :player-down
+     (fn [x _]
+       (swap! gui-state update-move-tints add-card-tints))
+     :player-up
+     (fn [x _]
+       (swap! gui-state update-move-tints sub-card-tints))}
     :pixi/stage
     {:impi/key                 :stage
      :pixi.object/type         :pixi.object.type/container
-     :pixi.object/position     [100 100]
+     :pixi.object/position     [200 (- (* (+ (second card-size) card-spacing) 3)
+                                       (/ (second card-size) 2))]
      :pixi.object/interactive? true
      :pixi.event/mouse-move    [:mouse-move]
      :pixi.container/children
