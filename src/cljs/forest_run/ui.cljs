@@ -83,8 +83,8 @@
 (def add-card-tints (partial update-card-tints +))
 (def sub-card-tints (partial update-card-tints -))
 
-(def valid-move-tint (- 0x99ff99 0xFFFFFF))
-(def invalid-move-tint (- 0xffb2b2 0xFFFFFF))
+(def valid-move-tint (- 0xccffcc 0xFFFFFF))
+(def invalid-move-tint (- 0xffcccc 0xFFFFFF))
 
 (defn update-move-tints
   [state tint-fn]
@@ -168,6 +168,13 @@
                         (stage-x)))))
 
 (.addEventListener js/window "resize" resize-renderer!)
+
+(defn start []
+  (do (init-stage!)
+      (.start ticker)))
+
+(defn stop []
+  (.stop ticker))
 
 (comment
   (init-stage!))
