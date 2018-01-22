@@ -18,3 +18,6 @@
 
 (defmethod impi/update-prop! :pixi.sprite/tint [object _ _ tint]
   (set! (.-tint object) tint))
+
+(defmethod impi/update-prop! :pixi.text/anchor [object _ _ [x y]]
+  (.set (.-anchor object) x y))

@@ -11,12 +11,15 @@
 (def card-size [card-w card-h])
 (def card-spacing 8)
 
-(defn render-card [{:keys [rank suit] :as card} pos index revealed]
+(defn render-card [{:keys [rank suit] :as card}
+                   {:keys [pos index revealed]
+                    :or   {revealed true}}]
   (let [card-name (keyword (str (name rank) "-" (name suit)))]
     {:impi/key                 card-name
      :pixi.object/type         :pixi.object.type/sprite
      :pixi.object/position     pos
      :card/rotation            0
+     :card/revealed            revealed
      :game/index               index
      :pixi.sprite/anchor       [0.5 0.5]
      :pixi.sprite/tint         0xFFFFFF
@@ -27,29 +30,46 @@
                              (str "img/" (name card-name) ".png")
                              (str "img/back.png"))}}))
 
+(defn render-attack
+  [{:keys [impi/key]} attack]
+  [{:impi/key             (str (name key) "-text")
+    :pixi.object/type     :pixi.object.type/text
+    :pixi.object/position [0 0]
+    :pixi.text/anchor     [0.5 0.5]
+    :pixi.text/text       attack
+    :pixi.text/style
+    {:pixi.text.style/align            "left"
+     :pixi.text.style/fill             0xff0000
+     :pixi.text.style/font-weight      "bold"
+     :pixi.text.style/font-family      "Arial"
+     :pixi.text.style/font-size        42
+     :pixi.text.style/stroke           0x000000
+     :pixi.text.style/stroke-thickness 6}}])
+
 (defn render-deck [{:keys [deck position]}]
-  (let [[c r] position
+  (let [[c r]    position
         card-pos (fn [c-idx r-idx]
                    (mapv #(* %1 (+ %2 card-spacing))
                          [(Math/abs (- c-idx 2)) (* r-idx -1)]
-                         card-size))]
+                         card-size))
+        attacks  (core/apply-attacks deck)]
     (->> (for [[r-idx row] (map-indexed vector deck)]
            (for [[c-idx card] (map-indexed vector row)]
              (render-card card
-                          (card-pos c-idx r-idx)
-                          [c-idx r-idx]
-                          (<= r-idx (+ r 3)))))
+                          {:pos      (card-pos c-idx r-idx)
+                           :index    [c-idx r-idx]
+                           :revealed (<= r-idx (+ r 3))})))
          flatten
          (map (fn [card] [(:game/index card) card]))
          (into {position (-> (render-card core/player-card
-                                          (card-pos c r)
-                                          position
-                                          true)
+                                          {:pos   (card-pos c r)
+                                           :index position})
                              (assoc :pixi.event/pointer-down [:player-down])
-                             (assoc :pixi.event/pointer-up   [:player-up])
+                             (assoc :pixi.event/pointer-up [:player-up])
                              (assoc :pixi.event/pointer-up-outside [:player-up])
                              (dissoc :pixi.event/click))})
          (into (sorted-map-by >)))))
+
 
 (defonce state (atom nil))
 (defonce updates-chan (async/chan))
@@ -95,6 +115,26 @@
         (tint-fn valid-idxs valid-move-tint)
         (tint-fn invalid-idxs invalid-move-tint))))
 
+(defn update-card-attacks
+  [state show-attacks?]
+  (let [attacks (-> state :game/state last :deck core/apply-attacks)]
+    (update-in state
+               [:pixi/stage
+                :pixi.container/children
+                :deck
+                :pixi.container/children]
+               (partial reduce-kv
+                        (fn [m k v]
+                          (let [attack (core/lookup-card attacks (:game/index v))]
+                            (assoc m k (if (:card/revealed v)
+                                         (assoc v
+                                                :pixi.container/children
+                                                (if show-attacks?
+                                                  (render-attack v attack)
+                                                  []))
+                                         v))))
+                        {}))))
+
 (def stage-x #(- (* js/window.innerWidth 0.5)
                  (+ card-w card-spacing)))
 
@@ -121,10 +161,14 @@
          (async/put! updates-chan #(update-card % id :card/rotation inc)))
        :player-down
        (fn [_]
-         (async/put! updates-chan #(update-move-tints % add-card-tints)))
+         (async/put! updates-chan #(-> %
+                                       (update-move-tints add-card-tints)
+                                       (update-card-attacks true))))
        :player-up
        (fn [_]
-         (async/put! updates-chan #(update-move-tints % sub-card-tints)))}
+         (async/put! updates-chan #(-> %
+                                       (update-move-tints sub-card-tints)
+                                       (update-card-attacks false))))}
       :pixi/stage
       {:impi/key                 :stage
        :pixi.object/type         :pixi.object.type/container
@@ -139,11 +183,11 @@
          :pixi.container/children (render-deck (last game-state))}}}
       :game/state game-state})))
 
-(defn update-gui-state! [game-state]
+(defn update-gui-state! []
   (swap! state
-         update-in
-         [:pixi/stage :deck :pixi.container/children]
-         #(render-deck (last game-state))))
+         assoc-in
+         [:pixi/stage :pixi.container/children :deck :pixi.container/children]
+         (render-deck (last (:game/state @state)))))
 
 (let [element (.getElementById js/document "app")]
   (impi/mount :game @state element)

@@ -49,8 +49,8 @@
 
 (defn indices [matrix]
   (let [[w h] (dimensions matrix)]
-    (->> (for [y (range h)
-               x (range w)]
+    (->> (for [y (reverse (range h))
+               x (reverse (range w))]
            [x y])
          (partition w)
          (mapv #(into [] %)))))
@@ -76,28 +76,32 @@
   (let [[w _] (dimensions matrix)]
     [(mod i w) (int (/ i w))]))
 
-(defn segment-attacks [idx segment]
+(defn segment-attacks [deck idx segment]
   (->> segment
        flatten
        (map-indexed (fn [i {rank :rank}] [i rank]))
        (filter #((set (keys attacks)) (second %)))
        (mapv (fn [[i rank]]
-               [(update (i->xy deck i) 1 + (* 3 idx))
+               [idx
+                (update (i->xy deck i) 1 + (* 3 idx))
                 (rank attacks)]))))
 
 (defn deck-attacks [deck]
   (->> (partition 3 deck)
-       (map-indexed (partial segment-attacks))
+       (map-indexed (partial segment-attacks deck))
        (apply concat)))
 
 (defn zero-attack-deck [deck]
   (let [[w h] (dimensions deck)]
     (mapv vec (partition w (repeat (* w h) 0)))))
 
-(defn apply-attack [deck [pos attack]]
+(defn apply-attack [deck [seg-idx pos attack]]
   (reduce (fn [d [idx atk]]
-            (let [pos (reverse (map + idx pos))]
-              (if (get-in d pos nil)
+            (let [pos       (reverse (map + idx pos))
+                  seg-limit (* (inc seg-idx) 3)]
+              (if (and (>= (first pos) (- seg-limit 3))
+                       (< (first pos) seg-limit)
+                       (get-in d pos nil))
                 (update-in d pos + atk)
                 d)))
           deck (attack-indices attack)))
