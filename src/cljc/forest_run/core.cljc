@@ -49,8 +49,8 @@
 
 (defn indices [matrix]
   (let [[w h] (dimensions matrix)]
-    (->> (for [y (reverse (range h))
-               x (reverse (range w))]
+    (->> (for [y (range h)
+               x (range w)]
            [x y])
          (partition w)
          (mapv #(into [] %)))))
@@ -84,7 +84,7 @@
        (mapv (fn [[i rank]]
                [idx
                 (update (i->xy deck i) 1 + (* 3 idx))
-                (rank attacks)]))))
+                (into [] (reverse (rank attacks)))]))))
 
 (defn deck-attacks [deck]
   (->> (partition 3 deck)
@@ -140,6 +140,7 @@
   (let [{:keys [deck turn position hand] :as state} (last history)
         attacks     (apply-attacks deck)
         all-moves   (all-possible-moves history deck position)
+        hand        (hand-with-strengths hand)
         valid-move? (fn [[k v]]
                       (<= (get-in attacks (reverse v))
                           (reduce + (map :strength hand))))]
