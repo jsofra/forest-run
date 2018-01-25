@@ -46,13 +46,15 @@
      :pixi.text.style/stroke           0x000000
      :pixi.text.style/stroke-thickness 6}}])
 
+(defn card-pos
+  [c-idx r-idx]
+  (mapv #(* %1 (+ %2 card-spacing))
+        [(Math/abs (- c-idx 2)) (* r-idx -1)]
+        card-size))
+
 (defn render-deck [{:keys [deck position]}]
-  (let [[c r]    position
-        card-pos (fn [c-idx r-idx]
-                   (mapv #(* %1 (+ %2 card-spacing))
-                         [(Math/abs (- c-idx 2)) (* r-idx -1)]
-                         card-size))
-        attacks  (core/apply-attacks deck)]
+  (let [[c r]   position
+        attacks (core/apply-attacks deck)]
     (->> (for [[r-idx row] (map-indexed vector deck)]
            (for [[c-idx card] (map-indexed vector row)]
              (render-card card
@@ -64,9 +66,12 @@
          (into {position (-> (render-card core/player-card
                                           {:pos   (card-pos c r)
                                            :index position})
-                             (assoc :pixi.event/pointer-down [:player-down])
-                             (assoc :pixi.event/pointer-up [:player-up])
-                             (assoc :pixi.event/pointer-up-outside [:player-up])
+                             (assoc :pixi.event/pointer-down
+                                    [:player-down position])
+                             (assoc :pixi.event/pointer-up
+                                    [:player-up position])
+                             (assoc :pixi.event/pointer-up-outside
+                                    [:player-up position])
                              (dissoc :pixi.event/click))})
          (into (sorted-map-by >)))))
 
@@ -135,6 +140,27 @@
                                          v))))
                         {}))))
 
+(defn update-player-card
+  [state idx up?]
+  (let [pos-offset [4 4]]
+    (cond-> state
+      up? (-> (assoc-in [:pixi/stage :pixi.container/children :drop-shadow]
+                        {:impi/key             :player/drop-shadow
+                         :pixi.object/type     :pixi.object.type/sprite
+                         :pixi.object/position (apply card-pos idx)
+                         :pixi.sprite/anchor   [0.5 0.5]
+                         :pixi.sprite/texture
+                         {:pixi.texture/source "img/dropshadow.png"}})
+              (update-in [:pixi/stage :pixi.container/children]
+                         #(into (sorted-map-by >) %))
+              (update-card idx :pixi.object/position
+                           #(mapv - % pos-offset)))
+      (not up?) (-> (update-in [:pixi/stage :pixi.container/children]
+                               dissoc
+                               :drop-shadow)
+                    (update-card idx :pixi.object/position
+                                 #(mapv + % pos-offset))))))
+
 (def stage-x #(- (* js/window.innerWidth 0.5)
                  (+ card-w card-spacing)))
 
@@ -160,15 +186,17 @@
        (fn [_ id]
          (async/put! updates-chan #(update-card % id :card/rotation inc)))
        :player-down
-       (fn [_]
+       (fn [_ idx]
          (async/put! updates-chan #(-> %
                                        (update-move-tints add-card-tints)
-                                       (update-card-attacks true))))
+                                       (update-card-attacks true)
+                                       (update-player-card idx true))))
        :player-up
-       (fn [_]
+       (fn [_ idx]
          (async/put! updates-chan #(-> %
                                        (update-move-tints sub-card-tints)
-                                       (update-card-attacks false))))}
+                                       (update-card-attacks false)
+                                       (update-player-card idx false))))}
       :pixi/stage
       {:impi/key                 :stage
        :pixi.object/type         :pixi.object.type/container
