@@ -30,7 +30,7 @@
 (defn render-card
   ([card]
    (render-card card nil))
-  ([{:keys [rank suit pos index revealed attack]
+  ([{:keys [rank suit pos index revealed attack tint]
      :or   {revealed true}
      :as   card}
     player]
@@ -42,7 +42,9 @@
       :card/revealed            revealed
       :game/index               index
       :pixi.sprite/anchor       [0.5 0.5]
-      :pixi.sprite/tint         0xFFFFFF
+      :pixi.sprite/tint         (if (and revealed tint (:player/selected player))
+                                  tint
+                                  0xFFFFFF)
       :pixi.object/interactive? true
       :pixi.event/click         [:card-click index]
       :pixi.sprite/texture
@@ -61,18 +63,21 @@
                                  :pixi.event/pointer-up
                                  [:player-up]
                                  :pixi.event/pointer-up-outside
-                                 [:player-up])
-                          (dissoc :pixi.event/click))]
+                                 [:player-up]))]
     (if selected
-      {:pixi.object/type     :pixi.object.type/container
-       :pixi.container/children
-       [{:impi/key             :player/drop-shadow
-         :pixi.object/type     :pixi.object.type/sprite
-         :pixi.object/position pos
-         :pixi.sprite/anchor   [0.5 0.5]
-         :pixi.sprite/texture
-         {:pixi.texture/source "img/dropshadow.png"}}
-        (update rendered-card :pixi.object/position #(mapv - % [4 4]))]}
+      (let [rotation (* -2 js/PIXI.DEG_TO_RAD)]
+        {:pixi.object/type :pixi.object.type/container
+         :pixi.container/children
+         [{:impi/key             :player/drop-shadow
+           :pixi.object/type     :pixi.object.type/sprite
+           :pixi.object/position pos
+           :pixi.object/rotation rotation
+           :pixi.sprite/anchor   [0.5 0.5]
+           :pixi.sprite/texture
+           {:pixi.texture/source "img/dropshadow.png"}}
+          (-> rendered-card
+              (update :pixi.object/position #(mapv - % [4 4]))
+              (assoc :pixi.object/rotation rotation))]})
       rendered-card)))
 
 (defn card-pos
@@ -90,22 +95,20 @@
            (for [[c-idx card] (map-indexed vector row)
                  :let         [index  [c-idx r-idx]
                                attack (core/lookup-card attacks index)]]
-             (cond-> (render-card (merge card
-                                         {:pos      (apply card-pos index)
-                                          :index    index
-                                          :revealed (<= r-idx (+ r 3))
-                                          :attack   attack})
-                                  player)
-               (:player/selected player)
-               (cond->
-                   (contains? (set (vals valid)) index)
-                 (assoc :pixi.sprite/tint 0xccffcc)
-                 (contains? (set (vals invalid)) index)
-                 (assoc :pixi.sprite/tint 0xffcccc)))))
+             (render-card
+              (merge card
+                     {:pos      (apply card-pos index)
+                      :index    index
+                      :revealed (<= r-idx (+ r 3))
+                      :attack   attack
+                      :tint     (cond
+                                  (contains? (set (vals valid)) index) 0xccffcc
+                                  (contains? (set (vals invalid)) index) 0xffcccc)})
+              player)))
          flatten
          (map (fn [card] [(:game/index card) card]))
          (into {position (render-player (merge core/player-card
-                                               {:pos   (card-pos c r)
+                                               {:pos   (apply card-pos position)
                                                 :index position})
                                         player)})
          (into (sorted-map-by >)))))
@@ -130,7 +133,8 @@
    (let [{:canvas/keys [color]} canvas]
      {:pixi.renderer/size             [js/window.innerWidth js/window.innerHeight]
       :pixi.renderer/background-color color
-      :pixi.renderer/transparent?     false})
+      :pixi.renderer/transparent?     false
+      :pixi.renderer/antialias?       true})
    :pixi/listeners
    {:mouse-move
     (fn [e]
@@ -162,7 +166,7 @@
   (reset!
    state
    {:game-state (core/init-game-state)
-    :canvas     #:canvas {:color  0x0a1c5e}
+    :canvas     #:canvas {:color  0x00bfff  #_0x0a1c5e}
     :stage      #:stage {:y (- (* (+ card-h card-spacing) 3)
                                (/ card-h 2))}
     :player     #:player {:selected false}}))
