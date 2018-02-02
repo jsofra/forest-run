@@ -108,7 +108,7 @@
          flatten
          (map (fn [card] [(:game/index card) card]))
          (into {position (render-player (merge core/player-card
-                                               {:pos   (apply card-pos position)
+                                               {:pos   (:player/pos player)
                                                 :index position})
                                         player)})
          (into (sorted-map-by >)))))
@@ -165,11 +165,13 @@
 (defn init-stage! []
   (reset!
    state
-   {:game-state (core/init-game-state)
-    :canvas     #:canvas {:color  0x00bfff  #_0x0a1c5e}
-    :stage      #:stage {:y (- (* (+ card-h card-spacing) 3)
-                               (/ card-h 2))}
-    :player     #:player {:selected false}}))
+   (let [game-state (core/init-game-state)]
+     {:game-state game-state
+      :canvas     #:canvas {:color  0x00bfff  #_0x0a1c5e}
+      :stage      #:stage {:y (- (* (+ card-h card-spacing) 3)
+                                 (/ card-h 2))}
+      :player     #:player {:selected false
+                            :pos (apply card-pos (-> game-state last :position))}})))
 
 (let [element (.getElementById js/document "app")]
   (when @state (impi/mount :game (render-state @state) element))
