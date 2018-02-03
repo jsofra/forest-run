@@ -30,15 +30,16 @@
 (defn render-card
   ([card]
    (render-card card nil))
-  ([{:keys [rank suit pos index revealed attack tint]
-     :or   {revealed true}
+  ([{:keys [rank suit pos index attack tint flipped]
+     :or   {flipped 180}
      :as   card}
     player]
-   (let [card-name (keyword (str (name rank) "-" (name suit)))]
+   (let [card-name (keyword (str (name rank) "-" (name suit)))
+         revealed (even? (Math/ceil (/ (+ flipped 90) 180)))]
      {:impi/key                 card-name
       :pixi.object/type         :pixi.object.type/sprite
       :pixi.object/position     pos
-      :card/rotation            0
+      :card/flipped             flipped
       :card/revealed            revealed
       :game/index               index
       :pixi.sprite/anchor       [0.5 0.5]
@@ -58,9 +59,8 @@
 (defn render-player [{:keys [pos index] :as card}
                      {:player/keys [selected?]}]
   (let [rendered-card (-> (render-card card)
-                          (assoc :pixi.event/mouse-move [:player/mouse-move]
-                                 :pixi.event/mouse-down [:player/down]
-                                 :pixi.event/mouse-out [:player/up]
+                          (assoc :pixi.event/pointer-move [:player/move]
+                                 :pixi.event/pointer-down [:player/down]
                                  :pixi.event/pointer-up [:player/up]))]
     (if selected?
       (let [rotation (* -2 js/PIXI.DEG_TO_RAD)]
@@ -85,12 +85,12 @@
         [(Math/abs (- c-idx 2)) (* r-idx -1)]
         card-size))
 
-(defn render-deck [{:keys [game-state player]}]
+(defn render-cards [{:keys [game-state player]}]
   (let [{:keys [deck position]}       (last game-state)
         [c r]                         position
         attacks                       (core/apply-attacks deck)
         {:moves/keys [valid invalid]} (core/moves game-state)]
-    [{:impi/key :deck-cards
+    [{:impi/key :deck
       :pixi.object/type :pixi.object.type/container
       :pixi.container/children
       (->> (for [[r-idx row] (map-indexed vector deck)]
@@ -101,7 +101,8 @@
                 (merge card
                        {:pos      (apply card-pos index)
                         :index    index
-                        :revealed (<= r-idx (+ r 3))
+                        ;;:revealed (<= r-idx (+ r 3))
+                        :flipped  0
                         :attack   attack
                         :tint     (cond
                                     (contains? (set (vals valid)) index) 0xccffcc
@@ -142,7 +143,7 @@
       :pixi.renderer/transparent?     false
       :pixi.renderer/antialias?       true})
    :pixi/listeners
-   {:player/mouse-move
+   {:player/move
     (fn [e]
       (async/put! updates-chan #(cond-> %
                                   (-> % :player :player/selected?)
@@ -164,10 +165,10 @@
     :pixi.object/type         :pixi.object.type/container
     :pixi.object/position     [(stage-x) (:stage/y stage)]
     :pixi.container/children
-    {:deck
-     {:impi/key                :deck
+    {:cards
+     {:impi/key                :cards
       :pixi.object/type        :pixi.object.type/container
-      :pixi.container/children (render-deck state)}}}})
+      :pixi.container/children (render-cards state)}}}})
 
 (defn init-stage! []
   (reset!
