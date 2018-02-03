@@ -35,6 +35,7 @@
      :as   card}
     player]
    (let [card-name (keyword (str (name rank) "-" (name suit)))
+         flipped  (if (zero? (mod (+ flipped 90) 180)) (+ flipped 0.5) flipped)
          revealed (even? (Math/ceil (/ (+ flipped 90) 180)))]
      {:impi/key                 card-name
       :pixi.object/type         :pixi.object.type/sprite
