@@ -42,7 +42,7 @@
       :card/revealed            revealed
       :game/index               index
       :pixi.sprite/anchor       [0.5 0.5]
-      :pixi.sprite/tint         (if (and revealed tint (:player/selected player))
+      :pixi.sprite/tint         (if (and revealed tint (:player/selected? player))
                                   tint
                                   0xFFFFFF)
       :pixi.object/interactive? true
@@ -51,22 +51,21 @@
       {:pixi.texture/source (if revealed
                               (str "img/" (name card-name) ".png")
                               (str "img/back.png"))}
-      :pixi.container/children (if (and revealed (:player/selected player))
+      :pixi.container/children (if (and revealed (:player/selected? player))
                                  [(render-attack card-name attack)]
                                  [])})))
 
 (defn render-player [{:keys [pos index] :as card}
-                     {:player/keys [selected]}]
+                     {:player/keys [selected?]}]
   (let [rendered-card (-> (render-card card)
-                          (assoc :pixi.event/pointer-down
-                                 [:player-down]
-                                 :pixi.event/pointer-up
-                                 [:player-up]
-                                 :pixi.event/pointer-up-outside
-                                 [:player-up]))]
-    (if selected
+                          (assoc :pixi.event/mouse-move [:player/mouse-move]
+                                 :pixi.event/mouse-down [:player/down]
+                                 :pixi.event/mouse-out [:player/up]
+                                 :pixi.event/pointer-up [:player/up]))]
+    (if selected?
       (let [rotation (* -2 js/PIXI.DEG_TO_RAD)]
-        {:pixi.object/type :pixi.object.type/container
+        {:impi/key :player-card
+         :pixi.object/type :pixi.object.type/container
          :pixi.container/children
          [{:impi/key             :player/drop-shadow
            :pixi.object/type     :pixi.object.type/sprite
@@ -91,27 +90,30 @@
         [c r]                         position
         attacks                       (core/apply-attacks deck)
         {:moves/keys [valid invalid]} (core/moves game-state)]
-    (->> (for [[r-idx row] (map-indexed vector deck)]
-           (for [[c-idx card] (map-indexed vector row)
-                 :let         [index  [c-idx r-idx]
-                               attack (core/lookup-card attacks index)]]
-             (render-card
-              (merge card
-                     {:pos      (apply card-pos index)
-                      :index    index
-                      :revealed (<= r-idx (+ r 3))
-                      :attack   attack
-                      :tint     (cond
-                                  (contains? (set (vals valid)) index) 0xccffcc
-                                  (contains? (set (vals invalid)) index) 0xffcccc)})
-              player)))
-         flatten
-         (map (fn [card] [(:game/index card) card]))
-         (into {position (render-player (merge core/player-card
-                                               {:pos   (:player/pos player)
-                                                :index position})
-                                        player)})
-         (into (sorted-map-by >)))))
+    [{:impi/key :deck-cards
+      :pixi.object/type :pixi.object.type/container
+      :pixi.container/children
+      (->> (for [[r-idx row] (map-indexed vector deck)]
+             (for [[c-idx card] (map-indexed vector row)
+                   :let         [index  [c-idx r-idx]
+                                 attack (core/lookup-card attacks index)]]
+               (render-card
+                (merge card
+                       {:pos      (apply card-pos index)
+                        :index    index
+                        :revealed (<= r-idx (+ r 3))
+                        :attack   attack
+                        :tint     (cond
+                                    (contains? (set (vals valid)) index) 0xccffcc
+                                    (contains? (set (vals invalid)) index) 0xffcccc)})
+                player)))
+           flatten
+           (map (fn [card] [(:game/index card) card]))
+           (into (sorted-map-by >)))}
+     (render-player (merge core/player-card
+                           {:pos   (:player/pos player)
+                            :index position})
+                    player)]))
 
 (def stage-x #(- (* js/window.innerWidth 0.5)
                  (+ card-w card-spacing)))
@@ -123,9 +125,13 @@
   [state y-delta]
   (update-in state [:stage :stage/y] #(+ % y-delta)))
 
-(defn update-player-selection
-  [state selected?]
-  (assoc-in state [:player :player/selected] selected?))
+(defn assoc-player
+  [state attr val]
+  (assoc-in state [:player attr] val))
+
+(defn update-player
+  [state attr f]
+  (update-in state [:player attr] f))
 
 (defn render-state
   [{:keys [canvas stage game-state] :as state}]
@@ -136,26 +142,27 @@
       :pixi.renderer/transparent?     false
       :pixi.renderer/antialias?       true})
    :pixi/listeners
-   {:mouse-move
+   {:player/mouse-move
     (fn [e]
-      (async/put! updates-chan
-                  (let [event (-> e .-data .-originalEvent)]
-                    (if (and (not (zero? (.-buttons event)))
-                             (not (zero? (.-movementY event))))
-                      #(update-stage-y % (.-movementY event))
-                      identity))))
-    :player-down
+      (async/put! updates-chan #(cond-> %
+                                  (-> % :player :player/selected?)
+                                  (update-player
+                                   :player/pos
+                                   (fn [pos]
+                                     (mapv +
+                                           pos
+                                           [e.data.originalEvent.movementX
+                                            e.data.originalEvent.movementY]))))))
+    :player/up
     (fn [_]
-      (async/put! updates-chan #(update-player-selection % true)))
-    :player-up
+      (async/put! updates-chan #(assoc-player % :player/selected? false)))
+    :player/down
     (fn [_]
-      (async/put! updates-chan #(update-player-selection % false)))}
+      (async/put! updates-chan #(assoc-player % :player/selected? true)))}
    :pixi/stage
    {:impi/key                 :stage
     :pixi.object/type         :pixi.object.type/container
     :pixi.object/position     [(stage-x) (:stage/y stage)]
-    :pixi.object/interactive? true
-    :pixi.event/mouse-move    [:mouse-move]
     :pixi.container/children
     {:deck
      {:impi/key                :deck
@@ -170,7 +177,7 @@
       :canvas     #:canvas {:color  0x00bfff  #_0x0a1c5e}
       :stage      #:stage {:y (- (* (+ card-h card-spacing) 3)
                                  (/ card-h 2))}
-      :player     #:player {:selected false
+      :player     #:player {:selected? false
                             :pos (apply card-pos (-> game-state last :position))}})))
 
 (let [element (.getElementById js/document "app")]
@@ -179,7 +186,7 @@
                              (impi/mount :game (render-state s) element))))
 
 (defonce ticker (doto (js/PIXI.ticker.Ticker.)
-              (.stop)))
+                  (.stop)))
 
 (.add ticker
       (fn [delta-time]
