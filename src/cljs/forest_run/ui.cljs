@@ -184,22 +184,22 @@
                             :pos (apply card-pos (-> game-state last :position))}})))
 
 (defn flip-animation [duration]
-  [{:progress 0
-    :duration duration
-    :update-gen
-    (fn [t]
-      (fn [state]
-        (assoc-in state
-                  [:turn :deck [0 0] :flipped]
-                  (- 180 (* 180 t)))))}
-   {:progress 0
-    :duration duration
-    :update-gen
-    (fn [t]
-      (fn [state]
-        (assoc-in state
-                  [:turn :deck [0 0] :flipped]
-                  (* 180 t))))}])
+  {:children [{:steps [{:progress 0
+                        :duration duration
+                        :update-gen
+                        (fn [t]
+                          (fn [state]
+                            (assoc-in state
+                                      [:turn :deck [0 0] :flipped]
+                                      (- 180 (* 180 t)))))}
+                       {:progress 0
+                        :duration duration
+                        :update-gen
+                        (fn [t]
+                          (fn [state]
+                            (assoc-in state
+                                      [:turn :deck [0 0] :flipped]
+                                      (* 180 t))))}]}]})
 
 
 (let [element (.getElementById js/document "app")]
@@ -213,26 +213,41 @@
       (recur (conj elements element))
       elements)))
 
-(defn apply-animation-steps!
+(defn apply-animation-steps
   [delta-time [{:keys [progress duration update-gen]} :as steps]]
   (let [t         (min (/ progress duration) 1)
         update-fn (update-gen t)]
     (if (< t 1)
-      (async/put! animations-chan
-                  (update-in steps
+      {:steps     (update-in steps
                              [0 :progress]
-                             #(+ % delta-time)))
-      (when (> (count steps) 1)
-        (async/put! animations-chan
-                    (into [] (rest steps)))))
-    update-fn))
+                             #(+ % delta-time))
+       :update-fn update-fn}
+      (if (> (count steps) 1)
+        {:steps     (into [] (rest steps))
+         :update-fn update-fn}
+        {:update-fn update-fn}))))
+
+(defn apply-animation
+  [delta-time {:keys [steps children]}]
+  (if steps
+    (apply-animation-steps delta-time steps)
+    (let [children      (mapv (partial apply-animation delta-time) children)
+          new-children  (mapv #(dissoc % :update-fn) children)]
+      (cond-> {:update-fn (apply comp (mapv :update-fn children))}
+        (seq new-children) (assoc :children new-children)))))
 
 (defn game-handler [delta-time]
   (let [updates           (take-all! updates-chan)
         animations        (take-all! animations-chan)
-        animation-updates (mapv (partial apply-animation-steps! delta-time)
+        new-animations    (mapv (partial apply-animation delta-time)
                                 animations)
+        animation-updates (mapv :update-fn new-animations)
         all-updates       (seq (concat updates animation-updates))]
+
+    (doseq [a new-animations]
+      (when (or (seq (:children a)) (seq (dissoc a :update-fn :children)))
+        (async/put! animations-chan a)))
+
     #_(when (seq animations)
         (println delta-time)
         (println animations))
