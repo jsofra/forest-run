@@ -213,24 +213,25 @@
       (recur (conj elements element))
       elements)))
 
+(defn apply-animation-steps!
+  [delta-time [{:keys [progress duration update-gen]} :as steps]]
+  (let [t         (min (/ progress duration) 1)
+        update-fn (update-gen t)]
+    (if (< t 1)
+      (async/put! animations-chan
+                  (update-in steps
+                             [0 :progress]
+                             #(+ % delta-time)))
+      (when (> (count steps) 1)
+        (async/put! animations-chan
+                    (into [] (rest steps)))))
+    update-fn))
+
 (defn game-handler [delta-time]
   (let [updates           (take-all! updates-chan)
         animations        (take-all! animations-chan)
-        animation-updates (for [[{:keys [progress
-                                         duration
-                                         update-gen] :as step}
-                                 :as steps] animations]
-                            (let [t         (min (/ progress duration) 1)
-                                  update-fn (update-gen t)]
-                              (if (< t 1)
-                                (async/put! animations-chan
-                                            (update-in steps
-                                                       [0 :progress]
-                                                       #(+ % delta-time)))
-                                (when (> (count steps) 1)
-                                  (async/put! animations-chan
-                                              (into [] (rest steps)))))
-                              update-fn))
+        animation-updates (mapv (partial apply-animation-steps! delta-time)
+                                animations)
         all-updates       (seq (concat updates animation-updates))]
     #_(when (seq animations)
         (println delta-time)
