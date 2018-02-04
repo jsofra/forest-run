@@ -31,12 +31,12 @@
   ([card]
    (render-card card nil))
   ([{:keys [rank suit pos index attack tint flipped]
-     :or   {flipped 180}
+     :or   {flipped 0}
      :as   card}
     player]
    (let [card-name (keyword (str (name rank) "-" (name suit)))
          flipped  (if (zero? (mod (+ flipped 90) 180)) (+ flipped 0.5) flipped)
-         revealed (even? (Math/ceil (/ (+ flipped 90) 180)))]
+         revealed (odd? (Math/ceil (/ (+ flipped 90) 180)))]
      {:impi/key                 card-name
       :pixi.object/type         :pixi.object.type/sprite
       :pixi.object/position     pos
@@ -86,7 +86,7 @@
         [(Math/abs (- c-idx 2)) (* r-idx -1)]
         card-size))
 
-(defn render-cards [{:keys [game-state player]}]
+(defn render-cards [{:keys [game-state player turn]}]
   (let [{:keys [deck position]}       (last game-state)
         [c r]                         position
         attacks                       (core/apply-attacks deck)
@@ -103,7 +103,7 @@
                        {:pos      (apply card-pos index)
                         :index    index
                         ;;:revealed (<= r-idx (+ r 3))
-                        :flipped  0
+                        :flipped  (get-in turn [:deck index :flipped] 180)
                         :attack   attack
                         :tint     (cond
                                     (contains? (set (vals valid)) index) 0xccffcc
@@ -122,6 +122,7 @@
 
 (defonce state (atom nil))
 (defonce updates-chan (async/chan))
+(defonce animations-chan (async/chan))
 
 (defn update-stage-y
   [state y-delta]
@@ -176,33 +177,92 @@
    state
    (let [game-state (core/init-game-state)]
      {:game-state game-state
-      :canvas     #:canvas {:color  0x00bfff  #_0x0a1c5e}
+      :canvas     #:canvas {:color  0x00cc66  #_0x0a1c5e}
       :stage      #:stage {:y (- (* (+ card-h card-spacing) 3)
                                  (/ card-h 2))}
       :player     #:player {:selected? false
                             :pos (apply card-pos (-> game-state last :position))}})))
+
+(defn flip-animation [duration]
+  [{:progress 0
+    :duration duration
+    :update-gen
+    (fn [t]
+      (fn [state]
+        (assoc-in state
+                  [:turn :deck [0 0] :flipped]
+                  (- 180 (* 180 t)))))}
+   {:progress 0
+    :duration duration
+    :update-gen
+    (fn [t]
+      (fn [state]
+        (assoc-in state
+                  [:turn :deck [0 0] :flipped]
+                  (* 180 t))))}])
+
 
 (let [element (.getElementById js/document "app")]
   (when @state (impi/mount :game (render-state @state) element))
   (add-watch state ::mount (fn [_ _ _ s]
                              (impi/mount :game (render-state s) element))))
 
-(defonce ticker (doto (js/PIXI.ticker.Ticker.)
-                  (.stop)))
+(defn take-all! [chan]
+  (loop [elements []]
+    (if-let [element (async/poll! chan)]
+      (recur (conj elements element))
+      elements)))
 
-(.add ticker
-      (fn [delta-time]
-        (swap! state (loop [updates identity]
-                       (if-let [update (async/poll! updates-chan)]
-                         (recur (comp updates update))
-                         updates)))))
+(defn game-handler [delta-time]
+  (let [updates           (take-all! updates-chan)
+        animations        (take-all! animations-chan)
+        animation-updates (for [[{:keys [progress
+                                         duration
+                                         update-gen] :as step}
+                                 :as steps] animations]
+                            (let [t         (min (/ progress duration) 1)
+                                  update-fn (update-gen t)]
+                              (if (< t 1)
+                                (async/put! animations-chan
+                                            (update-in steps
+                                                       [0 :progress]
+                                                       #(+ % delta-time)))
+                                (when (> (count steps) 1)
+                                  (async/put! animations-chan
+                                              (into [] (rest steps)))))
+                              update-fn))
+        all-updates       (seq (concat updates animation-updates))]
+    #_(when (seq animations)
+        (println delta-time)
+        (println animations))
+    (when all-updates
+      (swap! state (apply comp all-updates)))))
+
+(defn add-ticker! []
+  (doto (js/PIXI.ticker.Ticker.)
+    (.stop)
+    (.add game-handler)))
+
+(defonce ticker (atom nil))
 
 (defn start []
   (do (init-stage!)
-      (.start ticker)))
+      (reset! ticker (doto (add-ticker!)
+                       (.start)))))
+
+(defn pause []
+  (if-let [ticker @ticker]
+    (.stop ticker)))
+
+(defn continue []
+  (if-let [ticker @ticker]
+    (.start ticker)))
 
 (defn stop []
-  (.stop ticker))
+  (if-let [ticker @ticker]
+    (doto ticker
+      (.stop)
+      (.destroy))))
 
 (comment
   (init-stage!))
