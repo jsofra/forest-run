@@ -185,23 +185,28 @@
                            [[c-idx r-idx] {:flipped 180}]))
                        (into {}))})))
 
-(defn flip-animation [duration]
-  {:children [{:steps [{:progress 0
-                        :duration duration
-                        :update-gen
-                        (fn [t]
-                          (fn [state]
-                            (assoc-in state
-                                      [:field [0 0] :flipped]
-                                      (- 180 (* 180 t)))))}
-                       {:progress 0
-                        :duration duration
-                        :update-gen
-                        (fn [t]
-                          (fn [state]
-                            (assoc-in state
-                                      [:field [0 0] :flipped]
-                                      (* 180 t))))}]}]})
+(defn flip-cards [duration]
+  {:children
+   (->>
+    (for [r-idx (range 3)]
+      (for [c-idx (range 3)]
+        (let [delay-factor (* duration 0.3)
+              delay (+ (* c-idx delay-factor) (* r-idx 3 delay-factor))]
+          {:steps
+           [{:progress   0
+             :duration   delay
+             :update-gen (fn [t] identity)}
+            {:progress 0
+             :duration duration
+             :update-gen
+             (fn [t]
+               (fn [state]
+                 (assoc-in state
+                           [:field [c-idx r-idx] :flipped]
+                           (- 180 (* 180 t)))))}]})))
+    (apply concat)
+    (into []))})
+
 
 
 (let [element (.getElementById js/document "app")]
@@ -264,9 +269,9 @@
 (defonce ticker (atom nil))
 
 (defn start []
-  (do (init-stage!)
-      (reset! ticker (doto (add-ticker!)
-                       (.start)))))
+  (init-stage!)
+  (reset! ticker (doto (add-ticker!)
+                   (.start))))
 
 (defn pause []
   (if-let [ticker @ticker]
@@ -277,10 +282,15 @@
     (.start ticker)))
 
 (defn stop []
-  (if-let [ticker @ticker]
-    (doto ticker
-      (.stop)
-      (.destroy))))
+  (if-let [ticker' @ticker]
+    (do (doto ticker'
+          (.stop)
+          (.destroy))
+        (reset! ticker nil))))
+
+(defn reset []
+  (stop)
+  (start))
 
 (comment
   (init-stage!))
