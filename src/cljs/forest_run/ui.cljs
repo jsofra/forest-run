@@ -86,7 +86,7 @@
         [(Math/abs (- c-idx 2)) (* r-idx -1)]
         card-size))
 
-(defn render-cards [{:keys [game-state player turn]}]
+(defn render-cards [{:keys [game-state player field]}]
   (let [{:keys [deck position]}       (last game-state)
         [c r]                         position
         attacks                       (core/apply-attacks deck)
@@ -98,19 +98,17 @@
              (for [[c-idx card] (map-indexed vector row)
                    :let         [index  [c-idx r-idx]
                                  attack (core/lookup-card attacks index)]]
-               (render-card
-                (merge card
-                       {:pos      (apply card-pos index)
-                        :index    index
-                        ;;:revealed (<= r-idx (+ r 3))
-                        :flipped  (get-in turn [:deck index :flipped] 180)
-                        :attack   attack
-                        :tint     (cond
-                                    (contains? (set (vals valid)) index) 0xccffcc
-                                    (contains? (set (vals invalid)) index) 0xffcccc)})
-                player)))
-           flatten
-           (map (fn [card] [(:game/index card) card]))
+               [index (render-card
+                       (merge card
+                              {:pos      (apply card-pos index)
+                               :index    index
+                               ;;:revealed (<= r-idx (+ r 3))
+                               :flipped  (get-in field [index :flipped])
+                               :attack   attack
+                               :tint     (cond
+                                           (contains? (set (vals valid)) index) 0xccffcc
+                                           (contains? (set (vals invalid)) index) 0xffcccc)})
+                       player)]))
            (into (sorted-map-by >)))}
      (render-player (merge core/player-card
                            {:pos   (:player/pos player)
@@ -177,11 +175,15 @@
    state
    (let [game-state (core/init-game-state)]
      {:game-state game-state
-      :canvas     #:canvas {:color  0x00cc66  #_0x0a1c5e}
-      :stage      #:stage {:y (- (* (+ card-h card-spacing) 3)
-                                 (/ card-h 2))}
+      :canvas     #:canvas {:color 0x00cc66 #_0x0a1c5e}
+      :stage      #:stage  {:y (- (* (+ card-h card-spacing) 3)
+                                  (/ card-h 2))}
       :player     #:player {:selected? false
-                            :pos (apply card-pos (-> game-state last :position))}})))
+                            :pos       (apply card-pos (-> game-state last :position))}
+      :field      (->> (for [[r-idx row] (map-indexed vector (-> game-state last :deck))]
+                         (for [[c-idx card] (map-indexed vector row)]
+                           [[c-idx r-idx] {:flipped 180}]))
+                       (into {}))})))
 
 (defn flip-animation [duration]
   {:children [{:steps [{:progress 0
@@ -190,7 +192,7 @@
                         (fn [t]
                           (fn [state]
                             (assoc-in state
-                                      [:turn :deck [0 0] :flipped]
+                                      [:field [0 0] :flipped]
                                       (- 180 (* 180 t)))))}
                        {:progress 0
                         :duration duration
@@ -198,7 +200,7 @@
                         (fn [t]
                           (fn [state]
                             (assoc-in state
-                                      [:turn :deck [0 0] :flipped]
+                                      [:field [0 0] :flipped]
                                       (* 180 t))))}]}]})
 
 
