@@ -29,34 +29,41 @@
     :pixi.text.style/stroke-thickness 6}})
 
 (defn render-card
-  ([card]
-   (render-card card nil))
-  ([{:keys [rank suit pos index attack tint flipped]
-     :or   {flipped 0}
-     :as   card}
-    player]
+  ([{:keys [rank suit pos index tint flipped]
+     :or   {flipped 0
+            tint    0xFFFFFF}
+     :as   card}]
    (let [card-name (keyword (str (name rank) "-" (name suit)))
-         flipped  (if (zero? (mod (+ flipped 90) 180)) (+ flipped 0.5) flipped)
-         revealed (odd? (Math/ceil (/ (+ flipped 90) 180)))]
+         flipped   (if (zero? (mod (+ flipped 90) 180)) (+ flipped 0.5) flipped)
+         revealed  (odd? (Math/ceil (/ (+ flipped 90) 180)))]
      {:impi/key                 card-name
       :pixi.object/type         :pixi.object.type/sprite
       :pixi.object/position     pos
       :card/flipped             flipped
       :card/revealed            revealed
       :game/index               index
+      :pixi.sprite/tint         tint
       :pixi.sprite/anchor       [0.5 0.5]
-      :pixi.sprite/tint         (if (and revealed tint (:player/selected? player))
-                                  tint
-                                  0xFFFFFF)
       :pixi.object/interactive? true
       :pixi.event/click         [:card-click index]
       :pixi.sprite/texture
       {:pixi.texture/source (if revealed
                               (str "img/" (name card-name) ".png")
-                              (str "img/back.png"))}
-      :pixi.container/children (if (and revealed (:player/selected? player))
-                                 [(render-attack card-name attack)]
-                                 [])})))
+                              (str "img/back.png"))}})))
+
+(defn render-field-card
+  [{:keys [tint attack] :as card} player]
+  (let [rendered-card (render-card card)]
+    (assoc
+     rendered-card
+     :pixi.container/children
+     (if (and (:card/revealed rendered-card) (:player/selected? player))
+       [(render-attack (:impi/key rendered-card) attack)]
+       [])
+     :pixi.sprite/tint
+     (if (and (:card/revealed rendered-card) tint (:player/selected? player))
+       tint
+       0xFFFFFF))))
 
 (defn render-player [{:keys [pos index] :as card}
                      {:player/keys [selected?]}]
@@ -99,7 +106,7 @@
              (for [[c-idx card] (map-indexed vector row)
                    :let         [index  [c-idx r-idx]
                                  attack (core/lookup-card attacks index)]]
-               [index (render-card
+               [index (render-field-card
                        (merge card
                               {:pos      (apply card-pos index)
                                :index    index
