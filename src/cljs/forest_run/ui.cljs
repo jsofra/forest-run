@@ -2,6 +2,7 @@
   (:require [forest-run.impi]
             [impi.core :as impi]
             [forest-run.core :as core]
+            [forest-run.animate :as animate]
             [cljs.core.async :as async]))
 
 (enable-console-print!)
@@ -207,46 +208,16 @@
     (apply concat)
     (into []))})
 
-
-
-(let [element (.getElementById js/document "app")]
-  (when @state (impi/mount :game (render-state @state) element))
-  (add-watch state ::mount (fn [_ _ _ s]
-                             (impi/mount :game (render-state s) element))))
-
 (defn take-all! [chan]
   (loop [elements []]
     (if-let [element (async/poll! chan)]
       (recur (conj elements element))
       elements)))
 
-(defn apply-animation-steps
-  [delta-time [{:keys [progress duration update-gen]} :as steps]]
-  (let [t         (min (/ progress duration) 1)
-        update-fn (update-gen t)]
-    (if (< t 1)
-      {:steps     (update-in steps
-                             [0 :progress]
-                             #(+ % delta-time))
-       :update-fn update-fn}
-      (if (> (count steps) 1)
-        {:steps     (into [] (rest steps))
-         :update-fn update-fn}
-        {:update-fn update-fn}))))
-
-(defn apply-animation
-  [delta-time {:keys [steps children]}]
-  (if steps
-    (apply-animation-steps delta-time steps)
-    (let [children      (mapv (partial apply-animation delta-time) children)
-          new-children  (mapv #(dissoc % :update-fn) children)]
-      (cond-> {:update-fn (apply comp (mapv :update-fn children))}
-        (seq new-children) (assoc :children new-children)))))
-
 (defn game-handler [delta-time]
   (let [updates           (take-all! updates-chan)
         animations        (take-all! animations-chan)
-        new-animations    (mapv (partial apply-animation delta-time)
+        new-animations    (mapv (partial animate/apply-animation delta-time)
                                 animations)
         animation-updates (mapv :update-fn new-animations)
         all-updates       (seq (concat updates animation-updates))]
@@ -261,17 +232,35 @@
     (when all-updates
       (swap! state (apply comp all-updates)))))
 
-(defn add-ticker! []
-  (doto (js/PIXI.ticker.Ticker.)
-    (.stop)
-    (.add game-handler)))
-
 (defonce ticker (atom nil))
+
+(defn start-ticker! []
+  (reset! ticker
+          (doto (js/PIXI.ticker.Ticker.)
+            (.stop)
+            (.add game-handler)
+            (.start))))
+
+(defn destory-ticker! []
+  (if-let [ticker' @ticker]
+    (do (doto ticker'
+          (.stop)
+          (.destroy))
+        (reset! ticker nil))))
+
+(defn start-renderer! []
+  (let [element (.getElementById js/document "app")]
+    (when @state (impi/mount :game (render-state @state) element))
+    (add-watch state ::renderer (fn [_ _ _ s]
+                                  (impi/mount :game (render-state s) element)))))
+
+(defn stop-renderer! []
+  (remove-watch state ::renderer))
 
 (defn start []
   (init-stage!)
-  (reset! ticker (doto (add-ticker!)
-                   (.start))))
+  (start-renderer!)
+  (start-ticker!))
 
 (defn pause []
   (if-let [ticker @ticker]
@@ -282,11 +271,8 @@
     (.start ticker)))
 
 (defn stop []
-  (if-let [ticker' @ticker]
-    (do (doto ticker'
-          (.stop)
-          (.destroy))
-        (reset! ticker nil))))
+  (stop-renderer!)
+  (destory-ticker!))
 
 (defn reset []
   (stop)
