@@ -29,9 +29,12 @@
     :pixi.text.style/stroke-thickness 6}})
 
 (defn render-card
-  ([{:keys [rank suit pos index tint flipped]
-     :or   {flipped 0
-            tint    0xFFFFFF}
+  ([{:keys [rank suit pos index tint flipped rotation anchor]
+     :or   {flipped  0
+            tint     0xFFFFFF
+            rotation 0
+            anchor   [0.5 0.5]
+            pos      [0 0]}
      :as   card}]
    (let [card-name (keyword (str (name rank) "-" (name suit)))
          flipped   (if (zero? (mod (+ flipped 90) 180)) (+ flipped 0.5) flipped)
@@ -39,11 +42,12 @@
      {:impi/key                 card-name
       :pixi.object/type         :pixi.object.type/sprite
       :pixi.object/position     pos
+      :pixi.object/rotation     rotation
       :card/flipped             flipped
       :card/revealed            revealed
       :game/index               index
       :pixi.sprite/tint         tint
-      :pixi.sprite/anchor       [0.5 0.5]
+      :pixi.sprite/anchor       anchor
       :pixi.object/interactive? true
       :pixi.event/click         [:card-click index]
       :pixi.sprite/texture
@@ -111,7 +115,7 @@
                               {:pos      (apply card-pos index)
                                :index    index
                                ;;:revealed (<= r-idx (+ r 3))
-                               :flipped  (get-in field [index :flipped])
+                               :flipped  (get-in field [:field/cards index :flipped])
                                :attack   attack
                                :tint     (cond
                                            (contains? (set (vals valid)) index) 0xccffcc
@@ -123,16 +127,33 @@
                             :index position})
                     player)]))
 
-(def stage-x #(- (* js/window.innerWidth 0.5)
-                 (+ card-w card-spacing)))
+(defn render-hand [hand pos]
+  {:impi/key             :game/hand
+   :pixi.object/type     :pixi.object.type/container
+   :pixi.object/position pos
+   :pixi.container/children
+   (map-indexed
+    (fn [i c]
+      {:impi/key             (str "game/hand-" i)
+       :pixi.object/type     :pixi.object.type/container
+       :pixi.object/rotation (let [from -15
+                                   to   15
+                                   n    (count hand)]
+                               (* (+ from (* (* (/ (Math/abs (- from to)) (dec n))) i))
+                                  js/PIXI.DEG_TO_RAD))
+       :pixi.object/position [(* i card-w 0.5) (* card-h 0.5)]
+       :pixi.container/children
+       [{:impi/key             :player/drop-shadow
+         :pixi.object/type     :pixi.object.type/sprite
+         :pixi.sprite/anchor   [0.5 0.86]
+         :pixi.sprite/texture
+         {:pixi.texture/source "img/dropshadow.png"}}
+        (render-card (assoc c :anchor [0.5 0.9]))]})
+    hand)})
 
 (defonce state (atom nil))
 (defonce updates-chan (async/chan))
 (defonce animations-chan (async/chan))
-
-(defn update-stage-y
-  [state y-delta]
-  (update-in state [:stage :stage/y] #(+ % y-delta)))
 
 (defn assoc-player
   [state attr val]
@@ -143,7 +164,7 @@
   (update-in state [:player attr] f))
 
 (defn render-state
-  [{:keys [canvas stage game-state] :as state}]
+  [{:keys [canvas field game-state] :as state}]
   {:pixi/renderer
    (let [{:canvas/keys [color]} canvas]
      {:pixi.renderer/size             [js/window.innerWidth js/window.innerHeight]
@@ -169,14 +190,22 @@
     (fn [_]
       (async/put! updates-chan #(assoc-player % :player/selected? true)))}
    :pixi/stage
-   {:impi/key                 :stage
-    :pixi.object/type         :pixi.object.type/container
-    :pixi.object/position     [(stage-x) (:stage/y stage)]
-    :pixi.container/children
-    {:cards
-     {:impi/key                :cards
-      :pixi.object/type        :pixi.object.type/container
-      :pixi.container/children (render-cards state)}}}})
+   (let [field-x (- (* js/window.innerWidth 0.35)
+                    (+ card-w card-spacing))]
+     {:impi/key         :stage
+      :pixi.object/type :pixi.object.type/container
+      :pixi.container/children
+      {:game/field
+       {:impi/key                :game/field
+        :pixi.object/type        :pixi.object.type/container
+        :pixi.object/position    [field-x (:field/y field)]
+        :pixi.container/children (render-cards state)}
+       :game/hand (render-hand (-> game-state last :hand)
+                               [(+ field-x
+                                   (+ (* card-w 0.3)
+                                      (* 3 (+ card-w card-spacing))))
+                                (- (* (+ card-h card-spacing) 4)
+                                   (/ card-h 2))])}})})
 
 (defn init-stage! []
   (reset!
@@ -184,14 +213,14 @@
    (let [game-state (core/init-game-state)]
      {:game-state game-state
       :canvas     #:canvas {:color 0x00cc66 #_0x0a1c5e}
-      :stage      #:stage  {:y (- (* (+ card-h card-spacing) 3)
-                                  (/ card-h 2))}
       :player     #:player {:selected? false
                             :pos       (apply card-pos (-> game-state last :position))}
-      :field      (->> (for [[r-idx row] (map-indexed vector (-> game-state last :deck))]
-                         (for [[c-idx card] (map-indexed vector row)]
-                           [[c-idx r-idx] {:flipped 180}]))
-                       (into {}))})))
+      :field      #:field {:cards (->> (for [[r-idx row] (map-indexed vector (-> game-state last :deck))]
+                                         (for [[c-idx card] (map-indexed vector row)]
+                                           [[c-idx r-idx] {:flipped 180}]))
+                                       (into {}))
+                           :y (- (* (+ card-h card-spacing) 3)
+                                 (/ card-h 2))}})))
 
 (defn flip-cards [duration]
   {:children
@@ -210,7 +239,7 @@
              (fn [t]
                (fn [state]
                  (assoc-in state
-                           [:field [c-idx r-idx] :flipped]
+                           [:field :field/cards [c-idx r-idx] :flipped]
                            (- 180 (* 180 t)))))}]})))
     (apply concat)
     (into []))})
