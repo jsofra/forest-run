@@ -143,7 +143,7 @@
                                   js/PIXI.DEG_TO_RAD))
        :pixi.object/position [(* i card-w 0.5) (* card-h 0.5)]
        :pixi.container/children
-       [{:impi/key             :player/drop-shadow
+       [{:impi/key             (str "hand/drop-shadow-" i)
          :pixi.object/type     :pixi.object.type/sprite
          :pixi.sprite/anchor   [0.5 0.86]
          :pixi.sprite/texture
