@@ -28,35 +28,33 @@
     :pixi.text.style/stroke           0x000000
     :pixi.text.style/stroke-thickness 6}})
 
+(def card-defaults
+  (merge #:pixi.sprite {:tint     0xFFFFFF
+                        :anchor   [0.5 0.5]}
+         #:pixi.object {:position [0 0]
+                        :rotation 0}))
+
 (defn render-card
-  ([{:keys [rank suit pos index tint flipped rotation anchor]
-     :or   {flipped  0
-            tint     0xFFFFFF
-            rotation 0
-            anchor   [0.5 0.5]
-            pos      [0 0]}
+  ([{:keys [rank suit flipped]
+     :or   {flipped 0}
      :as   card}]
    (let [card-name (keyword (str (name rank) "-" (name suit)))
          flipped   (if (zero? (mod (+ flipped 90) 180)) (+ flipped 0.5) flipped)
          revealed  (odd? (Math/ceil (/ (+ flipped 90) 180)))]
-     {:impi/key                 card-name
-      :pixi.object/type         :pixi.object.type/sprite
-      :pixi.object/position     pos
-      :pixi.object/rotation     rotation
-      :card/flipped             flipped
-      :card/revealed            revealed
-      :game/index               index
-      :pixi.sprite/tint         tint
-      :pixi.sprite/anchor       anchor
-      :pixi.object/interactive? true
-      :pixi.event/click         [:card-click index]
-      :pixi.sprite/texture
-      {:pixi.texture/source (if revealed
-                              (str "img/" (name card-name) ".png")
-                              (str "img/back.png"))}})))
+     (merge
+      card-defaults
+      {:impi/key         card-name
+       :pixi.object/type :pixi.object.type/sprite
+       :card/flipped     flipped
+       :card/revealed    revealed
+       :pixi.sprite/texture
+       {:pixi.texture/source (if revealed
+                               (str "img/" (name card-name) ".png")
+                               (str "img/back.png"))}}
+      card))))
 
 (defn render-field-card
-  [{:keys [tint attack] :as card} player]
+  [{:keys [attack] :as card} player]
   (let [rendered-card (render-card card)]
     (assoc
      rendered-card
@@ -65,24 +63,26 @@
        [(render-attack (:impi/key rendered-card) attack)]
        [])
      :pixi.sprite/tint
-     (if (and (:card/revealed rendered-card) tint (:player/selected? player))
-       tint
+     (if (and (:card/revealed rendered-card)
+              (:pixi.sprite/tint card)
+              (:player/selected? player))
+       (:pixi.sprite/tint card)
        0xFFFFFF))))
 
-(defn render-player [{:keys [pos index] :as card}
-                     {:player/keys [selected?]}]
+(defn render-player [card {:player/keys [selected?]}]
   (let [rendered-card (-> (render-card card)
                           (assoc :pixi.event/pointer-move [:player/move]
                                  :pixi.event/pointer-down [:player/down]
-                                 :pixi.event/pointer-up [:player/up]))]
+                                 :pixi.event/pointer-up [:player/up]
+                                 :pixi.object/interactive? true))]
     (if selected?
       (let [rotation (* -2 js/PIXI.DEG_TO_RAD)]
-        {:impi/key :player-card
+        {:impi/key         :player-card
          :pixi.object/type :pixi.object.type/container
          :pixi.container/children
          [{:impi/key             :player/drop-shadow
            :pixi.object/type     :pixi.object.type/sprite
-           :pixi.object/position pos
+           :pixi.object/position (:pixi.object/position card)
            :pixi.object/rotation rotation
            :pixi.sprite/anchor   [0.5 0.5]
            :pixi.sprite/texture
@@ -103,28 +103,32 @@
         [c r]                         position
         attacks                       (core/apply-attacks deck)
         {:moves/keys [valid invalid]} (core/moves game-state)]
-    [{:impi/key :deck
+    [{:impi/key         :deck
       :pixi.object/type :pixi.object.type/container
       :pixi.container/children
       (->> (for [[r-idx row] (map-indexed vector deck)]
              (for [[c-idx card] (map-indexed vector row)
-                   :let         [index  [c-idx r-idx]
-                                 attack (core/lookup-card attacks index)]]
+                   :let         [index   [c-idx r-idx]
+                                 attack  (core/lookup-card attacks index)
+                                 flipped (get-in field
+                                                 [:field/cards
+                                                  index
+                                                  :flipped])]]
                [index (render-field-card
                        (merge card
-                              {:pos      (apply card-pos index)
-                               :index    index
+                              {:pixi.object/position (apply card-pos index)
+                               :pixi.object/index    index
                                ;;:revealed (<= r-idx (+ r 3))
-                               :flipped  (get-in field [:field/cards index :flipped])
-                               :attack   attack
-                               :tint     (cond
-                                           (contains? (set (vals valid)) index) 0xccffcc
-                                           (contains? (set (vals invalid)) index) 0xffcccc)})
+                               :pixi.sprite/tint
+                               (cond
+                                 (contains? (set (vals valid)) index)   0xccffcc
+                                 (contains? (set (vals invalid)) index) 0xffcccc)
+                               :flipped              flipped
+                               :attack               attack})
                        player)]))
            (into (sorted-map-by >)))}
      (render-player (merge core/player-card
-                           {:pos   (:player/pos player)
-                            :index position})
+                           {:pixi.object/position (:player/pos player)})
                     player)]))
 
 (defn render-hand [hand pos]
@@ -148,7 +152,7 @@
          :pixi.sprite/anchor   [0.5 0.86]
          :pixi.sprite/texture
          {:pixi.texture/source "img/dropshadow.png"}}
-        (render-card (assoc c :anchor [0.5 0.9]))]})
+        (render-card (assoc c :pixi.sprite/anchor [0.5 0.9]))]})
     hand)})
 
 (defonce state (atom nil))
