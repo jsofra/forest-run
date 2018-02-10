@@ -156,6 +156,7 @@
     hand)})
 
 (defonce state (atom nil))
+(defonce events-chan (async/chan))
 (defonce updates-chan (async/chan))
 (defonce animations-chan (async/chan))
 
@@ -167,6 +168,29 @@
   [state attr f]
   (update-in state [:player attr] f))
 
+(defmulti handler-event :key)
+
+(defmethod handler-event :player/move
+  [{:keys [event]}]
+  (async/put! updates-chan
+              #(cond-> %
+                 (-> % :player :player/selected?)
+                 (update-player
+                  :player/pos
+                  (fn [pos]
+                    (mapv +
+                          pos
+                          [event.data.originalEvent.movementX
+                           event.data.originalEvent.movementY]))))))
+
+(defmethod handler-event :player/up
+  [_]
+  (async/put! updates-chan #(assoc-player % :player/selected? false)))
+
+(defmethod handler-event :player/down
+  [_]
+  (async/put! updates-chan #(assoc-player % :player/selected? true)))
+
 (defn render-state
   [{:keys [canvas field game-state] :as state}]
   {:pixi/renderer
@@ -175,24 +199,7 @@
       :pixi.renderer/background-color color
       :pixi.renderer/transparent?     false
       :pixi.renderer/antialias?       true})
-   :pixi/listeners
-   {:player/move
-    (fn [e]
-      (async/put! updates-chan #(cond-> %
-                                  (-> % :player :player/selected?)
-                                  (update-player
-                                   :player/pos
-                                   (fn [pos]
-                                     (mapv +
-                                           pos
-                                           [e.data.originalEvent.movementX
-                                            e.data.originalEvent.movementY]))))))
-    :player/up
-    (fn [_]
-      (async/put! updates-chan #(assoc-player % :player/selected? false)))
-    :player/down
-    (fn [_]
-      (async/put! updates-chan #(assoc-player % :player/selected? true)))}
+   :impi/events-chan events-chan
    :pixi/stage
    (let [field-x (- (* js/window.innerWidth 0.35)
                     (+ card-w card-spacing))]
@@ -255,6 +262,12 @@
       elements)))
 
 (defn game-handler [delta-time]
+
+  ;; process all the new events
+  ;; may generate updates/animations/events
+  (doseq [e (take-all! events-chan)]
+    (handler-event e))
+
   (let [updates           (take-all! updates-chan)
         animations        (take-all! animations-chan)
         new-animations    (mapv (partial animate/apply-animation delta-time)
@@ -262,6 +275,7 @@
         animation-updates (mapv :update-fn new-animations)
         all-updates       (seq (concat updates animation-updates))]
 
+    ;; process any animations
     (doseq [a new-animations]
       (when (or (seq (:children a)) (seq (dissoc a :update-fn :children)))
         (async/put! animations-chan a)))
@@ -269,6 +283,8 @@
     #_(when (seq animations)
         (println delta-time)
         (println animations))
+
+    ;; process all the updates
     (when all-updates
       (swap! state (apply comp all-updates)))))
 
