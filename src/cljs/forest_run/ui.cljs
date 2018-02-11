@@ -3,14 +3,20 @@
             [impi.core :as impi]
             [forest-run.core :as core]
             [forest-run.animate :as animate]
+            [forest-run.events :as events]
+            [forest-run.ui-state-utils :as utils]
             [cljs.core.async :as async]))
 
 (enable-console-print!)
 
-(def card-w 122)
-(def card-h 200)
-(def card-size [card-w card-h])
-(def card-spacing 8)
+(defonce state (atom nil))
+(defonce events-chan (async/chan))
+(defonce updates-chan (async/chan))
+(defonce animations-chan (async/chan))
+
+(defonce channels {:events     events-chan
+                   :updates    updates-chan
+                   :animations animations-chan})
 
 (defn render-attack
   [card-name attack]
@@ -92,12 +98,6 @@
               (assoc :pixi.object/rotation rotation))]})
       rendered-card)))
 
-(defn card-pos
-  [c-idx r-idx]
-  (mapv #(* %1 (+ %2 card-spacing))
-        [(Math/abs (- c-idx 2)) (* r-idx -1)]
-        card-size))
-
 (defn render-cards [{:keys [game-state player field]}]
   (let [{:keys [deck position]}       (last game-state)
         [c r]                         position
@@ -116,7 +116,7 @@
                                                   :flipped])]]
                [index (render-field-card
                        (merge card
-                              {:pixi.object/position (apply card-pos index)
+                              {:pixi.object/position (utils/card-pos index)
                                :pixi.object/index    index
                                ;;:revealed (<= r-idx (+ r 3))
                                :pixi.sprite/tint
@@ -145,7 +145,7 @@
                                    n    (count hand)]
                                (* (+ from (* (* (/ (Math/abs (- from to)) (dec n))) i))
                                   js/PIXI.DEG_TO_RAD))
-       :pixi.object/position [(* i card-w 0.5) (* card-h 0.5)]
+       :pixi.object/position [(* i utils/card-w 0.5) (* utils/card-h 0.5)]
        :pixi.container/children
        [{:impi/key             (str "hand/drop-shadow-" i)
          :pixi.object/type     :pixi.object.type/sprite
@@ -154,42 +154,6 @@
          {:pixi.texture/source "img/dropshadow.png"}}
         (render-card (assoc c :pixi.sprite/anchor [0.5 0.9]))]})
     hand)})
-
-(defonce state (atom nil))
-(defonce events-chan (async/chan))
-(defonce updates-chan (async/chan))
-(defonce animations-chan (async/chan))
-
-(defn assoc-player
-  [state attr val]
-  (assoc-in state [:player attr] val))
-
-(defn update-player
-  [state attr f]
-  (update-in state [:player attr] f))
-
-(defmulti handler-event :key)
-
-(defmethod handler-event :player/move
-  [{:keys [event]}]
-  (async/put! updates-chan
-              #(cond-> %
-                 (-> % :player :player/selected?)
-                 (update-player
-                  :player/pos
-                  (fn [pos]
-                    (mapv +
-                          pos
-                          [event.data.originalEvent.movementX
-                           event.data.originalEvent.movementY]))))))
-
-(defmethod handler-event :player/up
-  [_]
-  (async/put! updates-chan #(assoc-player % :player/selected? false)))
-
-(defmethod handler-event :player/down
-  [_]
-  (async/put! updates-chan #(assoc-player % :player/selected? true)))
 
 (defn render-state
   [{:keys [canvas field game-state] :as state}]
@@ -202,7 +166,7 @@
    :impi/events-chan events-chan
    :pixi/stage
    (let [field-x (- (* js/window.innerWidth 0.35)
-                    (+ card-w card-spacing))]
+                    (+ utils/card-w utils/card-spacing))]
      {:impi/key         :stage
       :pixi.object/type :pixi.object.type/container
       :pixi.container/children
@@ -213,47 +177,28 @@
         :pixi.container/children (render-cards state)}
        :game/hand (render-hand (-> game-state last :hand)
                                [(+ field-x
-                                   (+ (* card-w 0.3)
-                                      (* 3 (+ card-w card-spacing))))
-                                (- (* (+ card-h card-spacing) 4)
-                                   (/ card-h 2))])}})})
+                                   (+ (* utils/card-w 0.3)
+                                      (* 3 (+ utils/card-w utils/card-spacing))))
+                                (- (* (+ utils/card-h utils/card-spacing) 4)
+                                   (/ utils/card-h 2))])}})})
 
 (defn init-stage! []
   (reset!
    state
    (let [game-state (core/init-game-state)]
      {:game-state game-state
-      :canvas     #:canvas {:color 0x00cc66 #_0x0a1c5e}
-      :player     #:player {:selected? false
-                            :pos       (apply card-pos (-> game-state last :position))}
-      :field      #:field {:cards (->> (for [[r-idx row] (map-indexed vector (-> game-state last :deck))]
-                                         (for [[c-idx card] (map-indexed vector row)]
-                                           [[c-idx r-idx] {:flipped 180}]))
-                                       (into {}))
-                           :y (- (* (+ card-h card-spacing) 3)
-                                 (/ card-h 2))}})))
-
-(defn flip-cards [duration]
-  {:children
-   (->>
-    (for [r-idx (range 3)]
-      (for [c-idx (range 3)]
-        (let [delay-factor (* duration 0.3)
-              delay (+ (* c-idx delay-factor) (* r-idx 3 delay-factor))]
-          {:steps
-           [{:progress   0
-             :duration   delay
-             :update-gen (fn [t] identity)}
-            {:progress 0
-             :duration duration
-             :update-gen
-             (fn [t]
-               (fn [state]
-                 (assoc-in state
-                           [:field :field/cards [c-idx r-idx] :flipped]
-                           (- 180 (* 180 t)))))}]})))
-    (apply concat)
-    (into []))})
+      :canvas
+      #:canvas    {:color 0x00cc66 #_0x0a1c5e}
+      :player
+      #:player    {:selected? false
+                   :pos       (utils/card-pos (-> game-state last :position))}
+      :field
+      #:field     {:cards (->> (for [[r-idx row] (map-indexed vector (-> game-state last :deck))]
+                                 (for [[c-idx card] (map-indexed vector row)]
+                                   [[c-idx r-idx] {:flipped 180}]))
+                               (into {}))
+                   :y     (- (* (+ utils/card-h utils/card-spacing) 3)
+                             (/ utils/card-h 2))}})))
 
 (defn take-all! [chan]
   (loop [elements []]
@@ -266,7 +211,7 @@
   ;; process all the new events
   ;; may generate updates/animations/events
   (doseq [e (take-all! events-chan)]
-    (handler-event e))
+    (events/handler-event channels e))
 
   (let [updates           (take-all! updates-chan)
         animations        (take-all! animations-chan)
