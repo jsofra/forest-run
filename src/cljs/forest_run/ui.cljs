@@ -170,17 +170,16 @@
      {:impi/key         :stage
       :pixi.object/type :pixi.object.type/container
       :pixi.container/children
-      {:game/field
+      [(render-hand (-> game-state last :hand)
+                    [(+ field-x
+                        (+ (* utils/card-w 0.3)
+                           (* 3 (+ utils/card-w utils/card-spacing))))
+                     (- (* (+ utils/card-h utils/card-spacing) 4)
+                        (/ utils/card-h 2))])
        {:impi/key                :game/field
         :pixi.object/type        :pixi.object.type/container
         :pixi.object/position    [field-x (:field/y field)]
-        :pixi.container/children (render-cards state)}
-       :game/hand (render-hand (-> game-state last :hand)
-                               [(+ field-x
-                                   (+ (* utils/card-w 0.3)
-                                      (* 3 (+ utils/card-w utils/card-spacing))))
-                                (- (* (+ utils/card-h utils/card-spacing) 4)
-                                   (/ utils/card-h 2))])}})})
+        :pixi.container/children (render-cards state)}]})})
 
 (defn init-stage! []
   (reset!
