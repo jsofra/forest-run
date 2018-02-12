@@ -24,3 +24,9 @@
 
 (defmethod impi/update-prop! :pixi.text/anchor [object _ _ [x y]]
   (.set (.-anchor object) x y))
+
+(defmethod impi/update-prop! :pixi.object/width [object _ _ width]
+  (set! (.-width object) width))
+
+(defmethod impi/update-prop! :pixi.object/height [object _ _ height]
+  (set! (.-height object) height))
