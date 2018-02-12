@@ -98,38 +98,43 @@
               (assoc :pixi.object/rotation rotation))]})
       rendered-card)))
 
-(defn render-cards [{:keys [game-state player field]}]
+(defn render-field [{:keys [game-state player field]} field-x]
   (let [{:keys [deck position]}       (last game-state)
         [c r]                         position
         attacks                       (core/apply-attacks deck)
         {:moves/keys [valid invalid]} (core/moves game-state)]
-    [{:impi/key         :deck
-      :pixi.object/type :pixi.object.type/container
-      :pixi.container/children
-      (->> (for [[r-idx row] (map-indexed vector deck)]
-             (for [[c-idx card] (map-indexed vector row)
-                   :let         [index   [c-idx r-idx]
-                                 attack  (core/lookup-card attacks index)
-                                 flipped (get-in field
-                                                 [:field/cards
-                                                  index
-                                                  :flipped])]]
-               [index (render-field-card
-                       (merge card
-                              {:pixi.object/position (utils/card-pos index)
-                               :pixi.object/index    index
-                               ;;:revealed (<= r-idx (+ r 3))
-                               :pixi.sprite/tint
-                               (cond
-                                 (contains? (set (vals valid)) index)   0xccffcc
-                                 (contains? (set (vals invalid)) index) 0xffcccc)
-                               :flipped              flipped
-                               :attack               attack})
-                       player)]))
-           (into (sorted-map-by >)))}
-     (render-player (merge core/player-card
-                           {:pixi.object/position (:player/pos player)})
-                    player)]))
+    {:impi/key             :game/field
+     :pixi.object/type     :pixi.object.type/container
+     :pixi.object/position [field-x (:field/y field)]
+     :pixi.container/children
+     [{:impi/key         :deck
+       :pixi.object/type :pixi.object.type/container
+       :pixi.container/children
+       (->> (for [[r-idx row] (map-indexed vector deck)]
+              (for [[c-idx card] (map-indexed vector row)
+                    :let         [index   [c-idx r-idx]
+                                  attack  (core/lookup-card attacks index)
+                                  flipped (get-in field
+                                                  [:field/cards
+                                                   index
+                                                   :flipped])]]
+                [index (render-field-card
+                        (merge card
+                               {:pixi.object/position (utils/card-pos index)
+                                :pixi.object/index    index
+                                ;;:revealed (<= r-idx (+ r 3))
+                                :pixi.sprite/tint
+                                (cond
+                                  (contains? (set (vals valid)) index)   0xccffcc
+                                  (contains? (set (vals invalid)) index) 0xffcccc)
+                                :flipped              flipped
+                                :attack               attack})
+                        player)]))
+            (into (sorted-map-by >)))}
+      (render-player (assoc core/player-card
+                            :pixi.object/position
+                            (:player/pos player))
+                     player)]}))
 
 (defn render-hand [hand pos]
   {:impi/key             :game/hand
@@ -176,28 +181,26 @@
                            (* 3 (+ utils/card-w utils/card-spacing))))
                      (- (* (+ utils/card-h utils/card-spacing) 4)
                         (/ utils/card-h 2))])
-       {:impi/key                :game/field
-        :pixi.object/type        :pixi.object.type/container
-        :pixi.object/position    [field-x (:field/y field)]
-        :pixi.container/children (render-cards state)}]})})
+       (render-field state field-x)]})})
 
 (defn init-stage! []
   (reset!
    state
    (let [game-state (core/init-game-state)]
      {:game-state game-state
+
       :canvas
-      #:canvas    {:color 0x00cc66 #_0x0a1c5e}
+      #:canvas {:color 0x00cc66 #_0x0a1c5e}
       :player
-      #:player    {:selected? false
-                   :pos       (utils/card-pos (-> game-state last :position))}
+      #:player {:selected? false
+                :pos       (utils/card-pos (-> game-state last :position))}
       :field
-      #:field     {:cards (->> (for [[r-idx row] (map-indexed vector (-> game-state last :deck))]
-                                 (for [[c-idx card] (map-indexed vector row)]
-                                   [[c-idx r-idx] {:flipped 180}]))
-                               (into {}))
-                   :y     (- (* (+ utils/card-h utils/card-spacing) 3)
-                             (/ utils/card-h 2))}})))
+      #:field  {:cards (->> (for [[r-idx row] (map-indexed vector (-> game-state last :deck))]
+                              (for [[c-idx card] (map-indexed vector row)]
+                                [[c-idx r-idx] {:flipped 180}]))
+                            (into {}))
+                :y     (- (* (+ utils/card-h utils/card-spacing) 3)
+                          (/ utils/card-h 2))}})))
 
 (defn take-all! [chan]
   (loop [elements []]
