@@ -30,3 +30,6 @@
 
 (defmethod impi/update-prop! :pixi.object/height [object _ _ height]
   (set! (.-height object) height))
+
+(defmethod impi/update-prop! :pixi.object/pivot [object _ _ [x y]]
+  (set! (.-pivot object) (js/PIXI.Point. x y)))
