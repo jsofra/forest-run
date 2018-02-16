@@ -83,7 +83,7 @@
                   conj
                   (render-attack (:impi/key rendered-card) attack))))))
 
-(defn render-player [card {:player/keys [selected? pos]}]
+(defn render-player [card {:player/keys [selected? pos pulse]}]
   (let [rendered-card (-> (render-card card)
                           (assoc :pixi.event/pointer-move [:player/move]
                                  :pixi.event/pointer-down [:player/down]
@@ -92,7 +92,7 @@
                                  :pixi.object/position pos))]
     (if selected?
       (let [rotation (* -2 js/PIXI.DEG_TO_RAD)]
-        {:impi/key         :player-card
+        {:impi/key         :player/selected-card
          :pixi.object/type :pixi.object.type/container
          :pixi.container/children
          [{:impi/key             :player/drop-shadow
@@ -105,7 +105,18 @@
           (-> rendered-card
               (update :pixi.object/position #(mapv - % [4 4]))
               (assoc :pixi.object/rotation rotation))]})
-      rendered-card)))
+      {:impi/key :player/card
+       :pixi.object/type :pixi.object.type/container
+       :pixi.container/children
+       [{:impi/key             :player/pulse
+         :pixi.object/type     :pixi.object.type/sprite
+         :pixi.object/position pos
+         :pixi.object/alpha    pulse
+         :pixi.sprite/anchor   [0.5 0.5]
+         :pixi.sprite/tint     0x00FF00
+         :pixi.sprite/texture
+         {:pixi.texture/source "img/card-glow.png"}}
+        rendered-card]})))
 
 (defn render-field [{:keys [game-state player field]} field-x]
   (let [{:keys [deck position]}       (last game-state)
@@ -194,7 +205,8 @@
       #:canvas {:color 0xd7eff1 #_0x0a1c5e}
       :player
       #:player {:selected? false
-                :pos       (utils/card-pos (-> game-state last :position))}
+                :pos       (utils/card-pos (-> game-state last :position))
+                :pulse     0.0}
       :field
       #:field  {:cards (->> (for [[r-idx row] (map-indexed vector (-> game-state last :deck))]
                               (for [[c-idx card] (map-indexed vector row)]
@@ -226,7 +238,10 @@
     ;; process any animations
     (doseq [a new-animations]
       (when (or (seq (:children a)) (seq (dissoc a :update-fn :children)))
-        (async/put! animations-chan a)))
+        (async/put! animations-chan a))
+
+      (when (and (:post-steps a) (not (:steps a)))
+        ((:post-steps a) channels @state)))
 
     #_(when (seq animations)
         (println delta-time)

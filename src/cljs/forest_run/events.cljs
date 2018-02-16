@@ -24,8 +24,14 @@
   (async/put! events {:key :player/return :args {:duration 30}}))
 
 (defmethod handler-event :player/down
-  [{:keys [updates]} _]
-  (async/put! updates #(utils/assoc-player % :player/selected? true)))
+  [{:keys [updates events]} _]
+  (async/put! updates
+              #(if (get-in % [:game :game/started?])
+                 (utils/assoc-player % :player/selected? true)
+                 (do
+                   ;; TODO: move out of updating fn, should not have side effects
+                   (async/put! events {:key :cards/flip :args {:duration 30}})
+                   (assoc-in % [:game :game/started?] true)))))
 
 (defn flip-cards [duration]
   {:children
@@ -76,3 +82,25 @@
 (defmethod handler-event :player/return
   [{:keys [animations]} {{:keys [duration]} :args}]
   (async/put! animations (return-player duration)))
+
+(defn pulse-player [duration]
+  {:steps        [{:progress 0
+                   :duration duration
+                   :update-gen
+                   (fn [t]
+                     (fn step [state]
+                       (assoc-in state [:player :player/pulse] t)))}
+                  {:progress 0
+                   :duration duration
+                   :update-gen
+                   (fn [t]
+                     (fn step [state]
+                       (assoc-in state [:player :player/pulse] (Math/abs (dec t)))))}]
+   :post-steps (fn [{:keys [events]}
+                    {{:game/keys [started?]} :game}]
+                 (when (not started?)
+                   (async/put! events {:key :player/pulse :args {:duration duration}})))})
+
+(defmethod handler-event :player/pulse
+  [{:keys [animations events]} {{:keys [duration]} :args}]
+  (async/put! animations (pulse-player duration)))

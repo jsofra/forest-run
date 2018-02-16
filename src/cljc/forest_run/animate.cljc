@@ -12,23 +12,29 @@
     (+ (/ (ease-out power (dec (* t 2))) 2) 0.5)))
 
 (defn apply-animation-steps
-  [delta-time [{:keys [progress duration update-gen]} :as steps]]
+  [delta-time {[{:keys [progress duration update-gen]}] :steps
+               :as node}]
   (let [t         (min (/ progress duration) 1)
         update-fn (update-gen t)]
     (if (< t 1)
-      {:steps     (update-in steps
-                             [0 :progress]
-                             #(+ % delta-time))
-       :update-fn update-fn}
-      (if (> (count steps) 1)
-        {:steps     (into [] (rest steps))
-         :update-fn update-fn}
-        {:update-fn update-fn}))))
+      (-> node
+          (update-in [:steps 0 :progress]
+                     #(+ % delta-time))
+          (assoc :update-fn update-fn))
+      (if (> (count (:steps node)) 1)
+        (apply-animation-steps
+         (- progress duration)
+         (-> node
+             (update :steps #(into [] (rest %)))
+             (assoc :update-fn update-fn)))
+        (-> node
+            (dissoc :steps)
+            (assoc :update-fn update-fn))))))
 
 (defn apply-animation
-  [delta-time {:keys [steps children]}]
+  [delta-time {:keys [steps children] :as node}]
   (if steps
-    (apply-animation-steps delta-time steps)
+    (apply-animation-steps delta-time node)
     (let [children      (mapv (partial apply-animation delta-time) children)
           new-children  (mapv #(dissoc % :update-fn) children)]
       (cond-> {:update-fn (apply comp (mapv :update-fn children))}
