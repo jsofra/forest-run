@@ -229,11 +229,12 @@
     (events/handler-event channels e))
 
   (let [updates           (take-all! updates-chan)
+
         animations        (take-all! animations-chan)
         new-animations    (mapv (partial animate/apply-animation delta-time)
                                 animations)
-        animation-updates (mapv :update-fn new-animations)
-        all-updates       (seq (concat updates animation-updates))]
+
+        all-updates       (seq (map :update-fn (concat updates new-animations)))]
 
     ;; process any animations
     (doseq [a new-animations]
@@ -249,7 +250,11 @@
 
     ;; process all the updates
     (when all-updates
-      (swap! state (apply comp all-updates)))))
+      (let [[old new] (swap-vals! state (apply comp all-updates))]
+        (doseq [reaction (map :reaction updates)]
+          (when reaction
+            #_(println old new)
+            (reaction old new)))))))
 
 (defonce ticker (atom nil))
 

@@ -8,30 +8,33 @@
 (defmethod handler-event :player/move
   [{:keys [updates]} {:keys [event]}]
   (async/put! updates
-              #(cond-> %
-                 (-> % :player :player/selected?)
-                 (utils/update-player
-                  :player/pos
-                  (fn [pos]
-                    (mapv +
-                          pos
-                          [event.data.originalEvent.movementX
-                           event.data.originalEvent.movementY]))))))
+              {:update-fn #(cond-> %
+                             (-> % :player :player/selected?)
+                             (utils/update-player
+                              :player/pos
+                              (fn [pos]
+                                (mapv +
+                                      pos
+                                      [event.data.originalEvent.movementX
+                                       event.data.originalEvent.movementY]))))}))
 
 (defmethod handler-event :player/up
   [{:keys [updates events]} _]
-  (async/put! updates #(utils/assoc-player % :player/selected? false))
+  (async/put! updates {:update-fn #(utils/assoc-player % :player/selected? false)})
   (async/put! events {:key :player/return :args {:duration 30}}))
 
 (defmethod handler-event :player/down
   [{:keys [updates events]} _]
   (async/put! updates
-              #(if (get-in % [:game :game/started?])
-                 (utils/assoc-player % :player/selected? true)
-                 (do
-                   ;; TODO: move out of updating fn, should not have side effects
-                   (async/put! events {:key :cards/flip :args {:duration 30}})
-                   (assoc-in % [:game :game/started?] true)))))
+              {:update-fn
+               #(if (get-in % [:game :game/started?])
+                    (utils/assoc-player % :player/selected? true)
+                    (assoc-in % [:game :game/started?] true))
+               :reaction
+               (fn [old-state new-state]
+                 (when (and (not (get-in old-state [:game :game/started?]))
+                            (get-in new-state [:game :game/started?]))
+                   (async/put! events {:key :cards/flip :args {:duration 30}})))}))
 
 (defn flip-cards [duration]
   {:children
