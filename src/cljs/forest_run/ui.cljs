@@ -186,6 +186,8 @@
                     (+ utils/card-w utils/card-spacing))]
      {:impi/key         :stage
       :pixi.object/type :pixi.object.type/container
+      :pixi.object/scale [(/ js/window.innerHeight 950)
+                          (/ js/window.innerHeight 950)]
       :pixi.container/children
       [(render-hand (-> game-state last :hand)
                     [(+ field-x
@@ -213,7 +215,8 @@
                                 [[c-idx r-idx] {:flipped 180}]))
                             (into {}))
                 :y     (- (* (+ utils/card-h utils/card-spacing) 3)
-                          (/ utils/card-h 2))}})))
+                          (/ utils/card-h 2))}}))
+  (async/put! events-chan {:key :player/pulse :args {:duration 120}}))
 
 (defn take-all! [chan]
   (loop [elements []]

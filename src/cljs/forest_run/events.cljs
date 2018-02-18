@@ -86,18 +86,19 @@
   [{:keys [animations]} {{:keys [duration]} :args}]
   (async/put! animations (return-player duration)))
 
+
 (defn pulse-player [duration]
   {:steps        [{:progress 0
-                   :duration duration
+                   :duration (* duration 0.5)
                    :update-gen
                    (fn [t]
-                     (fn step [state]
+                     (fn [state]
                        (assoc-in state [:player :player/pulse] t)))}
                   {:progress 0
-                   :duration duration
+                   :duration (* duration 0.5)
                    :update-gen
                    (fn [t]
-                     (fn step [state]
+                     (fn [state]
                        (assoc-in state [:player :player/pulse] (Math/abs (dec t)))))}]
    :post-steps (fn [{:keys [events]}
                     {{:game/keys [started?]} :game}]
@@ -105,5 +106,26 @@
                    (async/put! events {:key :player/pulse :args {:duration duration}})))})
 
 (defmethod handler-event :player/pulse
-  [{:keys [animations events]} {{:keys [duration]} :args}]
+  [{:keys [animations]} {{:keys [duration]} :args}]
   (async/put! animations (pulse-player duration)))
+
+
+(defn slide-field [duration]
+  {:steps [{:progress 0
+            :duration duration
+            :update-gen
+            (fn [t]
+              (let [t (animate/ease-in-out 3 t)]
+                (fn step [{{:field/keys [init-y y]} :field
+                           :as state}]
+                  (if init-y
+                    (let [delta (* (+ utils/card-h utils/card-spacing) 3 t)]
+                      (-> state
+                          (assoc-in [:field :field/y] (+ init-y delta))
+                          (cond-> (= t 1) (update :field dissoc :field/init-y))))
+                    (step (assoc-in state [:field :field/init-y]
+                                    (get-in state [:field :field/y])))))))}]})
+
+(defmethod handler-event :field/slide
+  [{:keys [animations]} {{:keys [duration]} :args}]
+  (async/put! animations (slide-field duration)))
