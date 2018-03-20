@@ -16,6 +16,21 @@
 (defmethod impi/update-prop! :pixi.event/pointer-up-outside [object index _ listener]
   (impi/replace-listener object "pointerupoutside" index listener))
 
+(defmethod impi/update-prop! :pixi.event/touch-move [object index _ listener]
+  (impi/replace-listener object "touchmove" index listener))
+
+(defmethod impi/update-prop! :pixi.event/touch-start [object index _ listener]
+  (impi/replace-listener object "touchdown" index listener))
+
+(defmethod impi/update-prop! :pixi.event/touch-end [object index _ listener]
+  (impi/replace-listener object "touchend" index listener))
+
+(defmethod impi/update-prop! :pixi.event/touch-end-outside [object index _ listener]
+  (impi/replace-listener object "touchendoutside" index listener))
+
+(defmethod impi/update-prop! :pixi.event/tap [object index _ listener]
+  (impi/replace-listener object "tap" index listener))
+
 (defmethod impi/update-prop! :card/flipped [object _ _ rotation]
   (.set (.-skew object) 0 (* rotation js/PIXI.DEG_TO_RAD)))
 
