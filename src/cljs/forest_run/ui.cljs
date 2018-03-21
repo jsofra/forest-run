@@ -166,14 +166,14 @@
       (fn [i c]
         {:impi/key             (str "game/hand-" i)
          :pixi.object/type     :pixi.object.type/container
-         :pixi.object/rotation (let [from -15
-                                     to   15
+         :pixi.object/rotation (let [from -25
+                                     to   25
                                      n    (count hand)]
                                  (* (+ from (* (* (/ (Math/abs (- from to)) (dec n))) i))
                                     js/PIXI.DEG_TO_RAD))
-         :pixi.object/position [(* i utils/card-w 0.5) (* utils/card-h 0.5)]
+         :pixi.object/position [(+ (* i utils/card-w 0.2) 80) utils/card-h]
          :pixi.container/children
-         [(assoc (render-card c) :pixi.object/pivot [0 80])]})
+         [(assoc (render-card c) :pixi.object/pivot [0 (* utils/card-h 0.7)])]})
       hand))})
 
 (defn render-state
@@ -196,7 +196,7 @@
       [(render-hand (-> game-state last :hand)
                     [(+ field-x
                         (+ (* utils/card-w 0.5)
-                           (* 3 (+ utils/card-w utils/card-spacing))))
+                           (* 2 (+ utils/card-w utils/card-spacing))))
                      (- (* (+ utils/card-h utils/card-spacing) 4)
                         (/ utils/card-h 2))])
        (render-field state field-x)]})})
