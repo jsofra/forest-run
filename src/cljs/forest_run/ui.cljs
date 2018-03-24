@@ -161,7 +161,7 @@
    :pixi.object/type     :pixi.object.type/container
    :pixi.object/position pos
    :pixi.container/children
-   (let [hand (sort-by #(mapv % [:suit :rank]) hand)]
+   (let [hand (sort-by (juxt :suit (comp core/face-values :rank)) hand)]
      (map-indexed
       (fn [i c]
         {:impi/key             (str "game/hand-" i)
@@ -171,7 +171,7 @@
                                      n    (count hand)]
                                  (* (+ from (* (* (/ (Math/abs (- from to)) (dec n))) i))
                                     js/PIXI.DEG_TO_RAD))
-         :pixi.object/position [(+ (* i utils/card-w 0.2) 80) utils/card-h]
+         :pixi.object/position [(* i utils/card-w 0.2) utils/card-h]
          :pixi.container/children
          [(assoc (render-card c) :pixi.object/pivot [0 (* utils/card-h 0.7)])]})
       hand))})
@@ -186,7 +186,7 @@
       :pixi.renderer/antialias?       true})
    :impi/events-chan events-chan
    :pixi/stage
-   (let [field-x (* js/window.innerWidth 0.15)]
+   (let [field-x (* js/window.innerWidth 0.13)]
      {:impi/key         :stage
       :pixi.object/type :pixi.object.type/container
       :pixi.object/scale (let [d 850]
@@ -196,7 +196,7 @@
       [(render-hand (-> game-state last :hand)
                     [(+ field-x
                         (+ (* utils/card-w 0.5)
-                           (* 2 (+ utils/card-w utils/card-spacing))))
+                           (* 2.5 (+ utils/card-w utils/card-spacing))))
                      (- (* (+ utils/card-h utils/card-spacing) 4)
                         (/ utils/card-h 2))])
        (render-field state field-x)]})})
