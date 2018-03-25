@@ -156,24 +156,35 @@
             (into (sorted-map-by >)))}
       (render-player core/player-card player)]}))
 
+(defn sort-cards [cards]
+  (sort-by (juxt :suit (comp core/face-values :rank)) cards))
+
 (defn render-hand [hand pos]
   {:impi/key             :game/hand
    :pixi.object/type     :pixi.object.type/container
    :pixi.object/position pos
    :pixi.container/children
-   (let [hand (sort-by (juxt :suit (comp core/face-values :rank)) hand)]
-     (map-indexed
-      (fn [i c]
-        {:impi/key             (str "game/hand-" i)
-         :pixi.object/type     :pixi.object.type/container
-         :pixi.object/rotation (let [from -25
-                                     to   25
-                                     n    (count hand)]
-                                 (* (+ from (* (* (/ (Math/abs (- from to)) (dec n))) i))
-                                    js/PIXI.DEG_TO_RAD))
-         :pixi.object/position [(* i utils/card-w 0.2) utils/card-h]
-         :pixi.container/children
-         [(assoc (render-card c) :pixi.object/pivot [0 (* utils/card-h 0.7)])]})
+   (let [hand (map-indexed vector (partition-by :suit (sort-cards hand)))]
+     (mapcat
+      (fn [[suit-i cards]]
+        (map-indexed
+         (fn [i c]
+           {:impi/key             (str "game/hand-" suit-i "-" i)
+            :pixi.object/type     :pixi.object.type/container
+            :pixi.object/rotation (let [n     (count cards)
+                                        angle (* 15 (/ (dec n) 7))
+                                        from  (* -1 angle)
+                                        to    angle]
+                                    (if (= n 1)
+                                      0
+                                      (* (+ from (* (* (/ (Math/abs (- from to)) (dec n))) i))
+                                         js/PIXI.DEG_TO_RAD)))
+            :pixi.object/position [(* i (/ 220 (count cards)))
+                                   (* suit-i (* 0.9 utils/card-h))]
+            :pixi.container/children
+            [
+             (assoc (render-card c) :pixi.object/pivot [0 (* utils/card-h 0.7)])]})
+         cards))
       hand))})
 
 (defn render-state
@@ -195,10 +206,10 @@
       :pixi.container/children
       [(render-hand (-> game-state last :hand)
                     [(+ field-x
-                        (+ (* utils/card-w 0.5)
+                        (+ utils/card-w
                            (* 2.5 (+ utils/card-w utils/card-spacing))))
-                     (- (* (+ utils/card-h utils/card-spacing) 4)
-                        (/ utils/card-h 2))])
+                     (- (* (+ utils/card-h utils/card-spacing) 2)
+                        (* 0.2 utils/card-h))])
        (render-field state field-x)]})})
 
 (defn init-stage! []
