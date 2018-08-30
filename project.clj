@@ -2,13 +2,13 @@
   :description "FIXME: write description"
   :url "http://example.com/FIXME"
   :license {:name "Eclipse Public License"
-            :url "http://www.eclipse.org/legal/epl-v10.html"}
+            :url  "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.9.0"]
                  [org.clojure/clojurescript "1.9.946"]
                  [impi "0.0.11-SNAPSHOT"]
                  [org.clojure/core.async "0.4.474"]]
   :plugins [[lein-cljsbuild "1.1.7"]
-            [lein-figwheel "0.5.14"]]
+            [lein-figwheel "0.5.16"]]
   :cljsbuild
   {:builds
    {:main
@@ -28,8 +28,7 @@
   {:http-server-root "public"
    :server-port      3001
    :css-dirs         ["resources/public/css"]}
-  :profiles {:dev {:dependencies [[binaryage/devtools "0.9.8"]
-                                  [figwheel-sidecar "0.5.14"]
-                                  [com.cemerick/piggieback "0.2.1"]]
-                   :repl-options {:init             (set! *print-length* 50)
-                                  :nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]}}})
+  :profiles {:dev {:dependencies [[binaryage/devtools "0.9.10"]
+                                  [figwheel-sidecar "0.5.16" :exclusions [org.clojure/tools.nrepl]]
+                                  [cider/piggieback "0.3.8"]]
+                   :repl-options {:init (set! *print-length* 50)}}})
