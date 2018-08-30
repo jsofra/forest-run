@@ -182,8 +182,23 @@
             :pixi.object/position [(* i (/ 220 (count cards)))
                                    (* suit-i (* 0.9 utils/card-h))]
             :pixi.container/children
-            [
-             (assoc (render-card c) :pixi.object/pivot [0 (* utils/card-h 0.7)])]})
+            [(-> (render-card c)
+                 (assoc :pixi.object/pivot [0 (* utils/card-h 0.7)])
+                 (update :pixi.container/children
+                         conj
+                         {:impi/key             (str "game/hand-" suit-i "-" i "-text")
+                          :pixi.object/type     :pixi.object.type/text
+                          :pixi.text/anchor     [3.5 3.1]
+                          :pixi.text/text       (str (core/face-values (:rank c)))
+                          :pixi.text/style
+                          {:pixi.text.style/align            "left"
+                           :pixi.text.style/fill             0x1a77ba
+                           :pixi.text.style/font-weight      "normal"
+                           :pixi.text.style/font-family      "Arial"
+                           :pixi.text.style/font-size        28
+                           ;:pixi.text.style/stroke           0x000000
+                           ;:pixi.text.style/stroke-thickness 4
+                           }}))]})
          cards))
       hand))})
 
