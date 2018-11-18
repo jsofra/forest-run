@@ -1,0 +1,13 @@
+{:aliases
+ {:test {:extra-paths ["test"]
+         :extra-deps  {com.cognitect/test-runner {:git/url
+                                                  "https://github.com/cognitect-labs/test-runner"
+                                                  :sha "76568540e7f40268ad2b646110f237a60295fa3c"}}
+         :main-opts   ["-m" "cognitect.test-runner" "-d" "test"]}
+  :fig  {:main-opts ["-m" "figwheel.main"]}}
+ :deps  {impi                      {:mvn/version "0.0.11-SNAPSHOT"}
+         org.clojure/clojure       {:mvn/version "1.10.0-beta6"}
+         org.clojure/clojurescript {:mvn/version "1.10.439"}
+         org.clojure/core.async    {:mvn/version "0.4.474"}
+         com.bhauman/figwheel-main {:mvn/version "0.1.9"}}
+ :paths ["src" "target" "resources"]}
