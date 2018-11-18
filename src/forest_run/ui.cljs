@@ -203,7 +203,7 @@
       hand))})
 
 (defn render-state
-  [{:keys [canvas field game-state] :as state}]
+  [{:keys [canvas game-state] :as state}]
   {:pixi/renderer
    (let [{:canvas/keys [color]} canvas]
      {:pixi.renderer/size             [js/window.innerWidth js/window.innerHeight]
@@ -245,6 +245,7 @@
       #:field  {:cards (->> (for [[r-idx row] (map-indexed vector (-> game-state last :deck))]
                               (for [[c-idx card] (map-indexed vector row)]
                                 [[c-idx r-idx] {:flipped 180}]))
+                            (apply concat)
                             (into {}))
                 :y     (- (* (+ utils/card-h utils/card-spacing) 3)
                           (/ utils/card-h 2))}}))

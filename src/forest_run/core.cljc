@@ -43,9 +43,9 @@
 (def cavallo-attack
   [[0 0 0 0 0]
    [0 0 0 0 0]
-   [1 2 3 2 1]
-   [0 2 2 2 0]
-   [1 0 1 0 1]])
+   [0 0 3 0 0]
+   [0 0 0 0 0]
+   [0 0 0 0 0]])
 
 (defn indices [matrix]
   (let [[w h] (dimensions matrix)]
@@ -137,13 +137,15 @@
                {} avatar-moves)))
 
 (defn moves [history]
-  (let [{:keys [deck turn position hand] :as state} (last history)
+  (let [{:keys [deck turn position hand health] :as state} (last history)
+
         attacks     (apply-attacks deck)
         all-moves   (all-possible-moves history deck position)
         hand        (hand-with-strengths hand)
         valid-move? (fn [[k v]]
-                      (<= (get-in attacks (reverse v))
-                          (reduce + (map :strength hand))))]
+                      (let [atk (get-in attacks (reverse v))]
+                        (or (<= atk (reduce + (map :strength hand)))
+                            (> health atk))))]
     {:moves/valid   (into {} (filter valid-move? all-moves))
      :moves/invalid (into {} (remove valid-move? all-moves))}))
 
@@ -167,4 +169,5 @@
 (defn init-game-state []
   [{:deck     (shuffled-deck)
     :hand     starting-hand
-    :position [1 -1]}])
+    :position [1 -1]
+    :health   10}])
