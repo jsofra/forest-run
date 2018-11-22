@@ -41,7 +41,7 @@
                             (into {}))
                 :y     (- (* (+ utils/card-h utils/card-spacing) 3)
                           (/ utils/card-h 2))}}))
-  (async/put! events-chan {:key :player/pulse :args {:duration 120}}))
+  (async/put! events-chan #:event{:key :player/pulse :args {:duration 120}}))
 
 (defn take-all! [chan]
   (loop [elements []]
@@ -81,8 +81,7 @@
       (let [[old new] (swap-vals! state (apply comp all-updates))]
         (doseq [reaction (map :reaction updates)]
           (when reaction
-            #_(println old new)
-            (reaction old new)))))))
+            (reaction channels old new)))))))
 
 (defonce ticker (atom nil))
 

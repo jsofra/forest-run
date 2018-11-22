@@ -4,10 +4,13 @@
             [forest-run.animate :as animate]
             [forest-run.core :as core]))
 
-(defmulti handler-event (fn [_ e] (:key e)))
+(defn fire-event! [events event]
+  (async/put! events (assoc event :event/id (hash [event (js/Date.)]))))
+
+(defmulti handler-event (fn [_ e] (:event/key e)))
 
 (defmethod handler-event :player/move
-  [{:keys [updates]} {:keys [event]}]
+  [{:keys [updates]} {:event/keys [event]}]
   (async/put! updates
               {:update-fn #(cond-> %
                              (-> % :player :player/selected?)
@@ -20,7 +23,7 @@
                                        event.data.originalEvent.movementY]))))}))
 
 (defmethod handler-event :player/set-pos
-  [{:keys [updates events]} {{:keys [pos index]} :args}]
+  [{:keys [updates]} {{:keys [pos index]} :event/args}]
   (async/put! updates
               {:update-fn #(-> %
                                (utils/assoc-player :player/pos pos)
@@ -35,7 +38,7 @@
    updates
    {:update-fn #(utils/assoc-player % :player/selected? false)
     :reaction
-    (fn [old-state new-state]
+    (fn [_ old-state new-state]
       (let [{:moves/keys [valid]} (core/moves (-> new-state :game-state))
             valid-positions       (map utils/card-pos (vals valid))
             max-diffs             (->> valid-positions
@@ -47,22 +50,23 @@
                                        (map vector valid-positions (vals valid)))
             [[pos index _]]       (filter #(>= 30 (last %)) max-diffs)]
         (if pos
-          (async/put! events {:key :player/set-pos :args {:pos   pos
-                                                          :index index}})
-          (async/put! events {:key :player/return :args {:duration 30}}))))}))
+          (async/put! events #:event{:key :player/set-pos :args {:pos   pos
+                                                                 :index index}})
+          (async/put! events #:event{:key :player/return :args {:duration 30}}))))}))
 
 (defmethod handler-event :player/down
   [{:keys [updates events]} _]
-  (async/put! updates
-              {:update-fn
-               #(if (get-in % [:game :game/started?])
-                  (utils/assoc-player % :player/selected? true)
-                  (assoc-in % [:game :game/started?] true))
-               :reaction
-               (fn [old-state new-state]
-                 (when (and (not (get-in old-state [:game :game/started?]))
-                            (get-in new-state [:game :game/started?]))
-                   (async/put! events {:key :cards/flip :args {:duration 30}})))}))
+  (async/put!
+   updates
+   {:update-fn
+    #(if (get-in % [:game :game/started?])
+       (utils/assoc-player % :player/selected? true)
+       (assoc-in % [:game :game/started?] true))
+    :reaction
+    (fn [_ old-state new-state]
+      (when (and (not (get-in old-state [:game :game/started?]))
+                 (get-in new-state [:game :game/started?]))
+        (async/put! events #:event{:key :cards/flip :args {:duration 30}})))}))
 
 (defn flip-cards [duration]
   {:children
@@ -91,7 +95,7 @@
     (into []))})
 
 (defmethod handler-event :cards/flip
-  [{:keys [animations]} {{:keys [duration]} :args}]
+  [{:keys [animations]} {{:keys [duration]} :event/args}]
   (async/put! animations (flip-cards duration)))
 
 
@@ -115,7 +119,7 @@
                     (step (assoc-in state [:player :player/init-pos] pos))))))}]})
 
 (defmethod handler-event :player/return
-  [{:keys [animations]} {{:keys [duration]} :args}]
+  [{:keys [animations]} {{:keys [duration]} :event/args}]
   (async/put! animations (return-player duration)))
 
 
@@ -135,10 +139,10 @@
    :post-steps (fn [{:keys [events]}
                     {{:game/keys [started?]} :game}]
                  (when (not started?)
-                   (async/put! events {:key :player/pulse :args {:duration duration}})))})
+                   (async/put! events #:event{:key :player/pulse :args {:duration duration}})))})
 
 (defmethod handler-event :player/pulse
-  [{:keys [animations]} {{:keys [duration]} :args}]
+  [{:keys [animations]} {{:keys [duration]} :event/args}]
   (async/put! animations (pulse-player duration)))
 
 
@@ -158,14 +162,14 @@
                     (step (assoc-in state [:field :field/init-y]
                                     (get-in state [:field :field/y])))))))}]
    :post-steps (fn [{:keys [events]}]
-                 (async/put! events {:key :cards/flip :args {:duration 30}}))})
+                 (async/put! events #:event{:key :cards/flip :args {:duration 30}}))})
 
 (defmethod handler-event :field/slide
-  [{:keys [animations]} {{:keys [duration]} :args}]
+  [{:keys [animations]} {{:keys [duration]} :event/args}]
   (async/put! animations (slide-field duration)))
 
 (defmethod handler-event :game/next-segment
-  [{:keys [updates events]} {{:keys [duration]} :args}]
+  [{:keys [updates events]} {{:keys [duration]} :event/args}]
   (async/put! updates
               {:update-fn #(update-in % [:game :game/segment-index] inc)})
-  (async/put! events {:key :field/slide :args {:duration 60}}))
+  (async/put! events #:event{:key :field/slide :args {:duration 60}}))
