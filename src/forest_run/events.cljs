@@ -4,9 +4,6 @@
             [forest-run.animate :as animate]
             [forest-run.core :as core]))
 
-(defn fire-event! [events event]
-  (async/put! events (assoc event :event/id (hash [event (js/Date.)]))))
-
 (defmulti handler-event (fn [_ e] (:event/key e)))
 
 (defmethod handler-event :player/move
