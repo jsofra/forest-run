@@ -62,24 +62,20 @@
         new-animations    (mapv (partial animate/apply-animation delta-time)
                                 animations)
 
-        all-updates       (seq (map :update-fn (concat updates new-animations)))]
+        all-updates       (seq (concat updates (map :update new-animations)))]
 
     ;; process any animations
     (doseq [a new-animations]
-      (when (or (seq (:children a)) (seq (dissoc a :update-fn :children)))
+      (when (or (seq (:children a)) (seq (dissoc a :update :children)))
         (async/put! animations-chan a))
 
       (when (and (:post-steps a) (not (:steps a)))
         ((:post-steps a) channels @state)))
 
-    #_(when (seq animations)
-        (println delta-time)
-        (println animations))
-
     ;; process all the updates
     (when all-updates
-      (let [[old new] (swap-vals! state (apply comp all-updates))]
-        (doseq [reaction (map :reaction updates)]
+      (let [[old new] (swap-vals! state (apply comp (map :update-fn all-updates)))]
+        (doseq [reaction (map :reaction all-updates)]
           (when reaction
             (reaction channels old new)))))))
 
