@@ -44,6 +44,8 @@
           new-children (mapv #(dissoc % :update) children)
           updates      (mapv :update children)
           reactions    (map :reaction updates)]
-      (cond-> {:update {:update-fn (apply comp (mapv :update-fn updates))}}
+      (cond-> {:msg/type :animation
+               :update   {:msg/type  :update
+                          :update-fn (apply comp (mapv :update-fn updates))}}
         (seq new-children) (assoc :children new-children)
-        (seq reactions)    (assoc-in [:udpate :reaction] (comp-reactions reactions))))))
+        (seq reactions)    (assoc-in [:update :reaction] (comp-reactions reactions))))))

@@ -187,18 +187,18 @@
       hand))})
 
 (defn render-state
-  [events-chan {:keys [canvas game-state] :as state}]
+  [msg-chan {:keys [canvas game-state] :as state}]
   {:pixi/renderer
    (let [{:canvas/keys [color]} canvas]
      {:pixi.renderer/size             [js/window.innerWidth js/window.innerHeight]
       :pixi.renderer/background-color color
       :pixi.renderer/transparent?     false
       :pixi.renderer/antialias?       true})
-   :impi/events-chan events-chan
+   :impi/events-chan msg-chan
    :pixi/stage
    (let [field-x (* js/window.innerWidth 0.13)]
-     {:impi/key         :stage
-      :pixi.object/type :pixi.object.type/container
+     {:impi/key          :stage
+      :pixi.object/type  :pixi.object.type/container
       :pixi.object/scale (let [d 850]
                            [(/ js/window.innerWidth d)
                             (/ js/window.innerWidth d)])

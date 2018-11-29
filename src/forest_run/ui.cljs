@@ -11,13 +11,17 @@
 (enable-console-print!)
 
 (defonce state (atom nil))
-(defonce events-chan (async/chan))
-(defonce updates-chan (async/chan))
-(defonce animations-chan (async/chan))
+(defonce msg-chan (async/chan))
 
-(defonce channels {:events     events-chan
-                   :updates    updates-chan
-                   :animations animations-chan})
+(defonce msg-pub (async/pub msg-chan :msg/type))
+
+(defonce events-chan (async/chan))
+(async/sub msg-pub :event events-chan)
+(defonce updates-chan (async/chan))
+(async/sub msg-pub :update updates-chan)
+(defonce animations-chan (async/chan))
+(async/sub msg-pub :animation animations-chan)
+
 
 (defn init-stage! []
   (reset!
@@ -41,12 +45,16 @@
                             (into {}))
                 :y     (- (* (+ utils/card-h utils/card-spacing) 3)
                           (/ utils/card-h 2))}}))
-  (async/put! events-chan #:event{:key :player/pulse :args {:duration 120}}))
+  (async/put! msg-chan #:event{:msg/type :event
+                               :key      :player/pulse
+                               :args     {:duration 120}}))
 
 (defn take-all! [chan]
   (loop [elements []]
     (if-let [element (async/poll! chan)]
-      (recur (conj elements element))
+      (do
+        ;(when (= (:msg/type element) :event) (prn :e (:event/key element)))
+        (recur (conj elements element)))
       elements)))
 
 (defn game-handler [delta-time]
@@ -54,7 +62,7 @@
   ;; process all the new events
   ;; may generate updates/animations/events
   (doseq [e (take-all! events-chan)]
-    (events/handler-event channels e))
+    (events/handler-event msg-chan e))
 
   (let [updates           (take-all! updates-chan)
 
@@ -67,17 +75,18 @@
     ;; process any animations
     (doseq [a new-animations]
       (when (or (seq (:children a)) (seq (dissoc a :update :children)))
-        (async/put! animations-chan a))
+        (prn :a a)
+        (async/put! msg-chan a))
 
       (when (and (:post-steps a) (not (:steps a)))
-        ((:post-steps a) channels @state)))
+        ((:post-steps a) msg-chan @state)))
 
     ;; process all the updates
     (when all-updates
       (let [[old new] (swap-vals! state (apply comp (map :update-fn all-updates)))]
         (doseq [reaction (map :reaction all-updates)]
           (when reaction
-            (reaction channels old new)))))))
+            (reaction msg-chan old new)))))))
 
 (defonce ticker (atom nil))
 
@@ -95,7 +104,7 @@
           (.destroy))
         (reset! ticker nil))))
 
-(def render-state (partial views/render-state events-chan))
+(def render-state (partial views/render-state msg-chan))
 
 (defn start-renderer! []
   (let [element (.getElementById js/document "app")]

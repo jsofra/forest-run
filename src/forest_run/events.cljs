@@ -7,9 +7,10 @@
 (defmulti handler-event (fn [_ e] (:event/key e)))
 
 (defmethod handler-event :player/move
-  [{:keys [updates]} {:event/keys [event]}]
-  (async/put! updates
-              {:update-fn #(cond-> %
+  [msg-chan {:event/keys [event]}]
+  (async/put! msg-chan
+              {:msg/type  :update
+               :update-fn #(cond-> %
                              (-> % :player :player/selected?)
                              (utils/update-player
                               :player/pos
@@ -20,9 +21,10 @@
                                        event.data.originalEvent.movementY]))))}))
 
 (defmethod handler-event :player/set-pos
-  [{:keys [updates]} {{:keys [pos index]} :event/args}]
-  (async/put! updates
-              {:update-fn #(-> %
+  [msg-chan {{:keys [pos index]} :event/args}]
+  (async/put! msg-chan
+              {:msg/type  :update
+               :update-fn #(-> %
                                (utils/assoc-player :player/pos pos)
                                (update :game-state
                                        core/make-move
@@ -30,10 +32,11 @@
                                        {}))}))
 
 (defmethod handler-event :player/up
-  [{:keys [updates events]} _]
+  [msg-chan _]
   (async/put!
-   updates
-   {:update-fn #(utils/assoc-player % :player/selected? false)
+   msg-chan
+   {:msg/type  :update
+    :update-fn #(utils/assoc-player % :player/selected? false)
     :reaction
     (fn [_ old-state new-state]
       (let [{:moves/keys [valid]} (core/moves (-> new-state :game-state))
@@ -47,15 +50,20 @@
                                        (map vector valid-positions (vals valid)))
             [[pos index _]]       (filter #(>= 30 (last %)) max-diffs)]
         (if pos
-          (async/put! events #:event{:key :player/set-pos :args {:pos   pos
-                                                                 :index index}})
-          (async/put! events #:event{:key :player/return :args {:duration 30}}))))}))
+          (async/put! msg-chan #:event{:msg/type :event
+                                       :key      :player/set-pos
+                                       :args     {:pos   pos
+                                                  :index index}})
+          (async/put! msg-chan #:event{:msg/type :event
+                                       :key      :player/return
+                                       :args     {:duration 30}}))))}))
 
 (defmethod handler-event :player/down
-  [{:keys [updates events]} _]
+  [msg-chan _]
   (async/put!
-   updates
-   {:update-fn
+   msg-chan
+   {:msg/type :update
+    :update-fn
     #(if (get-in % [:game :game/started?])
        (utils/assoc-player % :player/selected? true)
        (assoc-in % [:game :game/started?] true))
@@ -63,10 +71,13 @@
     (fn [_ old-state new-state]
       (when (and (not (get-in old-state [:game :game/started?]))
                  (get-in new-state [:game :game/started?]))
-        (async/put! events #:event{:key :cards/flip :args {:duration 30}})))}))
+        (async/put! msg-chan #:event{:msg/type :event
+                                     :key      :cards/flip
+                                     :args     {:duration 30}})))}))
 
 (defn flip-cards [duration]
-  {:children
+  {:msg/type :animation
+   :children
    (->>
     (for [r-idx (range 3)]
       (for [c-idx (range 3)]
@@ -75,12 +86,14 @@
           {:steps
            [{:progress   0
              :duration   delay
-             :update-gen (fn [t] {:update-fn identity})}
+             :update-gen (fn [t] {:msg/type  :update
+                                  :update-fn identity})}
             {:progress 0
              :duration duration
              :update-gen
              (fn [t]
-               {:update-fn
+               {:msg/type :update
+                :update-fn
                 (fn [{{:game/keys [segment-index]} :game
                       :as                          state}]
                   (assoc-in state
@@ -93,67 +106,76 @@
     (into []))})
 
 (defmethod handler-event :cards/flip
-  [{:keys [animations]} {{:keys [duration]} :event/args}]
-  (async/put! animations (flip-cards duration)))
+  [msg-chan {{:keys [duration]} :event/args}]
+  (prn :flip)
+  (async/put! msg-chan (flip-cards duration)))
 
 
 (defn return-player [duration]
-  {:steps [{:progress 0
-            :duration duration
-            :update-gen
-            (fn [t]
-              (let [t (animate/ease-in-out 3 t)]
-                {:update-fn
-                 (fn step [{game-state                    :game-state
-                            {:player/keys [init-pos pos]} :player
-                            :as                           state}]
-                   (if init-pos
-                     (let [delta (mapv #(* (- %2 %1) t)
-                                       init-pos
-                                       (utils/card-pos
-                                        (-> game-state last :position)))]
-                       (-> state
-                           (assoc-in [:player :player/pos] (mapv + init-pos delta))
-                           (cond-> (= t 1) (update :player dissoc :player/init-pos))))
-                     (step (assoc-in state [:player :player/init-pos] pos))))}))}]})
+  {:msg/type :animation
+   :steps    [{:progress 0
+               :duration duration
+               :update-gen
+               (fn [t]
+                 (let [t (animate/ease-in-out 3 t)]
+                   {:msg/type :update
+                    :update-fn
+                    (fn step [{game-state                    :game-state
+                               {:player/keys [init-pos pos]} :player
+                               :as                           state}]
+                      (if init-pos
+                        (let [delta (mapv #(* (- %2 %1) t)
+                                          init-pos
+                                          (utils/card-pos
+                                           (-> game-state last :position)))]
+                          (-> state
+                              (assoc-in [:player :player/pos] (mapv + init-pos delta))
+                              (cond-> (= t 1) (update :player dissoc :player/init-pos))))
+                        (step (assoc-in state [:player :player/init-pos] pos))))}))}]})
 
 (defmethod handler-event :player/return
-  [{:keys [animations]} {{:keys [duration]} :event/args}]
-  (async/put! animations (return-player duration)))
+  [msg-chan {{:keys [duration]} :event/args}]
+  (async/put! msg-chan (return-player duration)))
 
 
 (defn pulse-player [duration]
-  {:steps        [{:progress 0
-                   :duration (* duration 0.5)
-                   :update-gen
-                   (fn [t]
-                     {:update-fn
-                      (fn [state]
-                        (assoc-in state [:player :player/pulse] t))})}
-                  {:progress 0
-                   :duration (* duration 0.5)
-                   :update-gen
-                   (fn [t]
-                     {:update-fn
-                      (fn [state]
-                        (assoc-in state [:player :player/pulse] (Math/abs (dec t))))})}]
-   :post-steps (fn [{:keys [events]}
-                    {{:game/keys [started?]} :game}]
+  {:msg/type   :animation
+   :steps      [{:progress 0
+                 :duration (* duration 0.5)
+                 :update-gen
+                 (fn [t]
+                   {:msg/type :update
+                    :update-fn
+                    (fn [state]
+                      (assoc-in state [:player :player/pulse] t))})}
+                {:progress 0
+                 :duration (* duration 0.5)
+                 :update-gen
+                 (fn [t]
+                   {:msg/type :update
+                    :update-fn
+                    (fn [state]
+                      (assoc-in state [:player :player/pulse] (Math/abs (dec t))))})}]
+   :post-steps (fn [msg-chan {{:game/keys [started?]} :game}]
                  (when (not started?)
-                   (async/put! events #:event{:key :player/pulse :args {:duration duration}})))})
+                   (async/put! msg-chan #:event{:msg/type :event
+                                                :key      :player/pulse
+                                                :args     {:duration duration}})))})
 
 (defmethod handler-event :player/pulse
-  [{:keys [animations]} {{:keys [duration]} :event/args}]
-  (async/put! animations (pulse-player duration)))
+  [msg-chan {{:keys [duration]} :event/args}]
+  (async/put! msg-chan (pulse-player duration)))
 
 
 (defn slide-field [duration]
-  {:steps      [{:progress 0
+  {:msg/type   :animation
+   :steps      [{:progress 0
                  :duration duration
                  :update-gen
                  (fn [t]
                    (let [t (animate/ease-in-out 3 t)]
-                     {:update-fn
+                     {:msg/type :update
+                      :update-fn
                       (fn step [{{:field/keys [init-y y]} :field
                                  :as                      state}]
                         (if init-y
@@ -163,14 +185,19 @@
                                 (cond-> (= t 1) (update :field dissoc :field/init-y))))
                           (step (assoc-in state [:field :field/init-y]
                                           (get-in state [:field :field/y])))))}))}]
-   :post-steps (fn [{:keys [events]}]
-                 (async/put! events #:event{:key :cards/flip :args {:duration 30}}))})
+   :post-steps (fn [msg-chan]
+                 (async/put! msg-chan #:event{:msg/type :event
+                                              :key      :cards/flip
+                                              :args     {:duration 30}}))})
 
 (defmethod handler-event :field/slide
-  [{:keys [animations]} {{:keys [duration]} :event/args}]
-  (async/put! animations (slide-field duration)))
+  [msg-chan {{:keys [duration]} :event/args}]
+  (async/put! msg-chan (slide-field duration)))
 
 (defmethod handler-event :game/next-segment
-  [{:keys [updates events]} {{:keys [duration]} :event/args}]
-  (async/put! updates {:update-fn #(update-in % [:game :game/segment-index] inc)})
-  (async/put! events #:event{:key :field/slide :args {:duration 60}}))
+  [msg-chan {{:keys [duration]} :event/args}]
+  (async/put! msg-chan {:msg/type  :update
+                        :update-fn #(update-in % [:game :game/segment-index] inc)})
+  (async/put! msg-chan #:event{:msg/type :event
+                               :key      :field/slide
+                               :args     {:duration 60}}))
