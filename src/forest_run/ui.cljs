@@ -54,6 +54,7 @@
   ;; process all the new events
   ;; may generate updates/animations/events
   (doseq [e (take-all! events-chan)]
+    (prn :e (:event/key e))
     (events/handler-event channels e))
 
   (let [updates           (take-all! updates-chan)
