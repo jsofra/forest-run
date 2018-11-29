@@ -52,9 +52,7 @@
 (defn take-all! [chan]
   (loop [elements []]
     (if-let [element (async/poll! chan)]
-      (do
-        ;(when (= (:msg/type element) :event) (prn :e (:event/key element)))
-        (recur (conj elements element)))
+      (recur (conj elements element))
       elements)))
 
 (defn game-handler [delta-time]
@@ -62,6 +60,7 @@
   ;; process all the new events
   ;; may generate updates/animations/events
   (doseq [e (take-all! events-chan)]
+    (prn :e (:event/key e))
     (events/handler-event msg-chan e))
 
   (let [updates           (take-all! updates-chan)
@@ -75,7 +74,6 @@
     ;; process any animations
     (doseq [a new-animations]
       (when (or (seq (:children a)) (seq (dissoc a :update :children)))
-        (prn :a a)
         (async/put! msg-chan a))
 
       (when (and (:post-steps a) (not (:steps a)))
