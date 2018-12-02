@@ -77,6 +77,7 @@
 
 (defn flip-cards [duration]
   {:msg/type :animation
+   :name     :flip-cards
    :children
    (->>
     (for [r-idx (range 3)]
@@ -107,12 +108,12 @@
 
 (defmethod handler-event :cards/flip
   [msg-chan {{:keys [duration]} :event/args}]
-  (prn :flip)
   (async/put! msg-chan (flip-cards duration)))
 
 
 (defn return-player [duration]
   {:msg/type :animation
+   :name     :return-player
    :steps    [{:progress 0
                :duration duration
                :update-gen
@@ -140,6 +141,7 @@
 
 (defn pulse-player [duration]
   {:msg/type   :animation
+   :name       :pulse-player
    :steps      [{:progress 0
                  :duration (* duration 0.5)
                  :update-gen
@@ -169,6 +171,7 @@
 
 (defn slide-field [duration]
   {:msg/type   :animation
+   :name       :slide-field
    :steps      [{:progress 0
                  :duration duration
                  :update-gen

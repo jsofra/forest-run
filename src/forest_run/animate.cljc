@@ -33,11 +33,11 @@
 
 (defn comp-reactions [reactions]
   (fn [& args]
-    (doseq [reaction reactions]
+    (doseq [reaction reactions :when reaction]
       (apply reaction args))))
 
 (defn apply-animation
-  [delta-time {:keys [steps children] :as node}]
+  [delta-time {:keys [name steps children] :as node}]
   (if steps
     (apply-animation-steps delta-time node)
     (let [children     (mapv (partial apply-animation delta-time) children)
@@ -45,6 +45,7 @@
           updates      (mapv :update children)
           reactions    (map :reaction updates)]
       (cond-> {:msg/type :animation
+               :name     name
                :update   {:msg/type  :update
                           :update-fn (apply comp (mapv :update-fn updates))}}
         (seq new-children) (assoc :children new-children)
