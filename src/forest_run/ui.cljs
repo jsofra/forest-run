@@ -13,16 +13,6 @@
 (defonce state (atom nil))
 (defonce msg-chan (async/chan))
 
-(defonce msg-pub (async/pub msg-chan :msg/type))
-
-(defonce events-chan (async/chan))
-(async/sub msg-pub :event events-chan)
-(defonce updates-chan (async/chan))
-(async/sub msg-pub :update updates-chan)
-(defonce animations-chan (async/chan))
-(async/sub msg-pub :animation animations-chan)
-
-
 (defn init-stage! []
   (reset!
    state
@@ -49,27 +39,31 @@
                                :key      :player/pulse
                                :args     {:duration 120}}))
 
-(defn take-all! [chan]
-  (loop [elements []]
+(defn take-all! [chan msg-keys]
+  (loop [elements (zipmap msg-keys (repeat []))]
     (if-let [element (async/poll! chan)]
-      (recur (conj elements element))
+      (if (contains? (set msg-keys) (:msg/type element))
+        (recur (update elements (:msg/type element) conj element)))
       elements)))
 
 (defn game-handler [delta-time]
 
   ;; process all the new events
   ;; may generate updates/animations/events
-  (doseq [e (take-all! events-chan)]
-    (prn :e (:event/key e))
-    (events/handler-event msg-chan e))
 
-  (let [updates           (take-all! updates-chan)
+  (let [{events     :event
+         updates    :update
+         animations :animation} (take-all! msg-chan [:event
+                                                     :update
+                                                     :animation])
 
-        animations        (take-all! animations-chan)
-        new-animations    (mapv (partial animate/apply-animation delta-time)
-                                animations)
+        new-animations (mapv (partial animate/apply-animation delta-time)
+                             animations)
 
-        all-updates       (seq (concat updates (map :update new-animations)))]
+        all-updates (seq (concat updates (map :update new-animations)))]
+
+    (doseq [e events]
+      (events/handler-event msg-chan e))
 
     ;; process any animations
     (doseq [a new-animations]
