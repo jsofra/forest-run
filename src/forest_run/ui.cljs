@@ -46,6 +46,10 @@
         (recur (update elements (:msg/type element) conj element)))
       elements)))
 
+(defn put-all! [chan msgs]
+  (doseq [msg msgs]
+    (async/put! chan msg)))
+
 (defn game-handler [delta-time]
 
   ;; process all the new events
@@ -63,7 +67,7 @@
         all-updates (seq (concat updates (map :update new-animations)))]
 
     (doseq [e events]
-      (events/handler-event msg-chan e))
+      (put-all! msg-chan (events/handler-event e)))
 
     ;; process any animations
     (doseq [a new-animations]
@@ -71,14 +75,14 @@
         (async/put! msg-chan a))
 
       (when (and (:post-steps a) (not (:steps a)))
-        ((:post-steps a) msg-chan @state)))
+        (put-all! msg-chan ((:post-steps a) @state))))
 
     ;; process all the updates
     (when all-updates
       (let [[old new] (swap-vals! state (apply comp (map :update-fn all-updates)))]
         (doseq [reaction (map :reaction all-updates)]
           (when reaction
-            (reaction msg-chan old new)))))))
+            (put-all! msg-chan (reaction old new))))))))
 
 (defonce ticker (atom nil))
 

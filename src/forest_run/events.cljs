@@ -4,41 +4,37 @@
             [forest-run.animate :as animate]
             [forest-run.core :as core]))
 
-(defmulti handler-event (fn [_ e] (:event/key e)))
+(defmulti handler-event (fn [e] (:event/key e)))
 
 (defmethod handler-event :player/move
-  [msg-chan {:event/keys [event]}]
-  (async/put! msg-chan
-              {:msg/type  :update
-               :update-fn #(cond-> %
-                             (-> % :player :player/selected?)
-                             (utils/update-player
-                              :player/pos
-                              (fn [pos]
-                                (mapv +
-                                      pos
-                                      [event.data.originalEvent.movementX
-                                       event.data.originalEvent.movementY]))))}))
+  [{:event/keys [event]}]
+  [{:msg/type  :update
+    :update-fn #(cond-> %
+                  (-> % :player :player/selected?)
+                  (utils/update-player
+                   :player/pos
+                   (fn [pos]
+                     (mapv +
+                           pos
+                           [event.data.originalEvent.movementX
+                            event.data.originalEvent.movementY]))))}])
 
 (defmethod handler-event :player/set-pos
-  [msg-chan {{:keys [pos index]} :event/args}]
-  (async/put! msg-chan
-              {:msg/type  :update
-               :update-fn #(-> %
-                               (utils/assoc-player :player/pos pos)
-                               (update :game-state
-                                       core/make-move
-                                       index
-                                       {}))}))
+  [{{:keys [pos index]} :event/args}]
+  [{:msg/type  :update
+    :update-fn #(-> %
+                    (utils/assoc-player :player/pos pos)
+                    (update :game-state
+                            core/make-move
+                            index
+                            {}))}])
 
 (defmethod handler-event :player/up
-  [msg-chan _]
-  (async/put!
-   msg-chan
-   {:msg/type  :update
+  [_]
+  [{:msg/type  :update
     :update-fn #(utils/assoc-player % :player/selected? false)
     :reaction
-    (fn [_ old-state new-state]
+    (fn [old-state new-state]
       (let [{:moves/keys [valid]} (core/moves (-> new-state :game-state))
             valid-positions       (map utils/card-pos (vals valid))
             max-diffs             (->> valid-positions
@@ -50,30 +46,28 @@
                                        (map vector valid-positions (vals valid)))
             [[pos index _]]       (filter #(>= 30 (last %)) max-diffs)]
         (if pos
-          (async/put! msg-chan #:event{:msg/type :event
-                                       :key      :player/set-pos
-                                       :args     {:pos   pos
-                                                  :index index}})
-          (async/put! msg-chan #:event{:msg/type :event
-                                       :key      :player/return
-                                       :args     {:duration 30}}))))}))
+          [#:event{:msg/type :event
+                   :key      :player/set-pos
+                   :args     {:pos   pos
+                              :index index}}]
+          [#:event{:msg/type :event
+                   :key      :player/return
+                   :args     {:duration 30}}])))}])
 
 (defmethod handler-event :player/down
-  [msg-chan _]
-  (async/put!
-   msg-chan
-   {:msg/type :update
+  [_]
+  [{:msg/type :update
     :update-fn
     #(if (get-in % [:game :game/started?])
        (utils/assoc-player % :player/selected? true)
        (assoc-in % [:game :game/started?] true))
     :reaction
-    (fn [_ old-state new-state]
+    (fn [old-state new-state]
       (when (and (not (get-in old-state [:game :game/started?]))
                  (get-in new-state [:game :game/started?]))
-        (async/put! msg-chan #:event{:msg/type :event
-                                     :key      :cards/flip
-                                     :args     {:duration 30}})))}))
+        [#:event{:msg/type :event
+                 :key      :cards/flip
+                 :args     {:duration 30}}]))}])
 
 (defn flip-cards [duration]
   {:msg/type :animation
@@ -87,8 +81,9 @@
           {:steps
            [{:progress   0
              :duration   delay
-             :update-gen (fn [t] {:msg/type  :update
-                                  :update-fn identity})}
+             :update-gen (fn [t]
+                           {:msg/type  :update
+                            :update-fn identity})}
             {:progress 0
              :duration duration
              :update-gen
@@ -107,8 +102,8 @@
     (into []))})
 
 (defmethod handler-event :cards/flip
-  [msg-chan {{:keys [duration]} :event/args}]
-  (async/put! msg-chan (flip-cards duration)))
+  [{{:keys [duration]} :event/args}]
+  [(flip-cards duration)])
 
 
 (defn return-player [duration]
@@ -135,8 +130,8 @@
                         (step (assoc-in state [:player :player/init-pos] pos))))}))}]})
 
 (defmethod handler-event :player/return
-  [msg-chan {{:keys [duration]} :event/args}]
-  (async/put! msg-chan (return-player duration)))
+  [{{:keys [duration]} :event/args}]
+  [(return-player duration)])
 
 
 (defn pulse-player [duration]
@@ -158,15 +153,15 @@
                     :update-fn
                     (fn [state]
                       (assoc-in state [:player :player/pulse] (Math/abs (dec t))))})}]
-   :post-steps (fn [msg-chan {{:game/keys [started?]} :game}]
+   :post-steps (fn [{{:game/keys [started?]} :game}]
                  (when (not started?)
-                   (async/put! msg-chan #:event{:msg/type :event
-                                                :key      :player/pulse
-                                                :args     {:duration duration}})))})
+                   [#:event{:msg/type :event
+                            :key      :player/pulse
+                            :args     {:duration duration}}]))})
 
 (defmethod handler-event :player/pulse
-  [msg-chan {{:keys [duration]} :event/args}]
-  (async/put! msg-chan (pulse-player duration)))
+  [{{:keys [duration]} :event/args}]
+  [(pulse-player duration)])
 
 
 (defn slide-field [duration]
@@ -188,19 +183,19 @@
                                 (cond-> (= t 1) (update :field dissoc :field/init-y))))
                           (step (assoc-in state [:field :field/init-y]
                                           (get-in state [:field :field/y])))))}))}]
-   :post-steps (fn [msg-chan]
-                 (async/put! msg-chan #:event{:msg/type :event
-                                              :key      :cards/flip
-                                              :args     {:duration 30}}))})
+   :post-steps (fn [_]
+                 [#:event{:msg/type :event
+                          :key      :cards/flip
+                          :args     {:duration 30}}])})
 
 (defmethod handler-event :field/slide
-  [msg-chan {{:keys [duration]} :event/args}]
-  (async/put! msg-chan (slide-field duration)))
+  [{{:keys [duration]} :event/args}]
+  [(slide-field duration)])
 
 (defmethod handler-event :game/next-segment
-  [msg-chan {{:keys [duration]} :event/args}]
-  (async/put! msg-chan {:msg/type  :update
-                        :update-fn #(update-in % [:game :game/segment-index] inc)})
-  (async/put! msg-chan #:event{:msg/type :event
-                               :key      :field/slide
-                               :args     {:duration 60}}))
+  [{{:keys [duration]} :event/args}]
+  [{:msg/type  :update
+    :update-fn #(update-in % [:game :game/segment-index] inc)}
+   #:event{:msg/type :event
+           :key      :field/slide
+           :args     {:duration 60}}])
