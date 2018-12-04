@@ -6,6 +6,7 @@
             [forest-run.events :as events]
             [forest-run.ui-state-utils :as utils]
             [forest-run.views :as views]
+            [forest-run.viz-events :as viz-events]
             [cljs.core.async :as async]))
 
 (enable-console-print!)
@@ -35,15 +36,19 @@
                             (into {}))
                 :y     (- (* (+ utils/card-h utils/card-spacing) 3)
                           (/ utils/card-h 2))}}))
-  (async/put! msg-chan #:event{:msg/type :event
-                               :key      :player/pulse
-                               :args     {:duration 120}}))
+  (async/put! msg-chan {:type :event
+                        :key  :player/pulse
+                        :args {:duration 120}}))
+
+(defonce  all-events (atom []))
 
 (defn take-all! [chan msg-keys]
   (loop [elements (zipmap msg-keys (repeat []))]
     (if-let [element (async/poll! chan)]
-      (if (contains? (set msg-keys) (:msg/type element))
-        (recur (update elements (:msg/type element) conj element)))
+      (do
+        (swap! all-events conj element)
+        (if (contains? (set msg-keys) (:type element))
+          (recur (update elements (:type element) conj element))))
       elements)))
 
 (defn put-all! [chan msgs]

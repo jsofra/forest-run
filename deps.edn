@@ -6,6 +6,7 @@
          :main-opts   ["-m" "cognitect.test-runner" "-d" "test"]}
   :fig  {:main-opts ["-m" "figwheel.main"]}}
  :deps  {impi                      {:mvn/version "0.0.11-SNAPSHOT"}
+         specviz                   {:mvn/version "0.2.4"}
          org.clojure/clojure       {:mvn/version "1.10.0-beta6"}
          org.clojure/clojurescript {:mvn/version "1.10.439"}
          org.clojure/core.async    {:mvn/version "0.4.474"}

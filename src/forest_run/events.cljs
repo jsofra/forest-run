@@ -4,11 +4,13 @@
             [forest-run.animate :as animate]
             [forest-run.core :as core]))
 
-(defmulti handler-event (fn [e] (:event/key e)))
+(defmulti handler-event (fn [e] (:key e)))
 
 (defmethod handler-event :player/move
-  [{:event/keys [event]}]
-  [{:msg/type  :update
+  [{:keys [event key]}]
+  [{:type      :update
+    :key       :player/move-update
+    :parent    key
     :update-fn #(cond-> %
                   (-> % :player :player/selected?)
                   (utils/update-player
@@ -20,8 +22,11 @@
                             event.data.originalEvent.movementY]))))}])
 
 (defmethod handler-event :player/set-pos
-  [{{:keys [pos index]} :event/args}]
-  [{:msg/type  :update
+  [{{:keys [pos index]} :args
+    key                 :key}]
+  [{:type      :update
+    :key       :game/make-move-update
+    :parent    key
     :update-fn #(-> %
                     (utils/assoc-player :player/pos pos)
                     (update :game-state
@@ -30,8 +35,10 @@
                             {}))}])
 
 (defmethod handler-event :player/up
-  [_]
-  [{:msg/type  :update
+  [{:keys [key]}]
+  [{:type      :update
+    :key       :player/deselected-update
+    :parent    key
     :update-fn #(utils/assoc-player % :player/selected? false)
     :reaction
     (fn [old-state new-state]
@@ -46,17 +53,21 @@
                                        (map vector valid-positions (vals valid)))
             [[pos index _]]       (filter #(>= 30 (last %)) max-diffs)]
         (if pos
-          [#:event{:msg/type :event
-                   :key      :player/set-pos
-                   :args     {:pos   pos
-                              :index index}}]
-          [#:event{:msg/type :event
-                   :key      :player/return
-                   :args     {:duration 30}}])))}])
+          [{:type   :event
+            :key    :player/set-pos
+            :parent :player/deselected-udpate
+            :args   {:pos   pos
+                     :index index}}]
+          [{:type   :event
+            :key    :player/return
+            :parent :player/deselected-udpate
+            :args   {:duration 30}}])))}])
 
 (defmethod handler-event :player/down
-  [_]
-  [{:msg/type :update
+  [{:keys [key]}]
+  [{:type   :update
+    :key    :player/selected-update
+    :parent key
     :update-fn
     #(if (get-in % [:game :game/started?])
        (utils/assoc-player % :player/selected? true)
@@ -65,13 +76,14 @@
     (fn [old-state new-state]
       (when (and (not (get-in old-state [:game :game/started?]))
                  (get-in new-state [:game :game/started?]))
-        [#:event{:msg/type :event
-                 :key      :cards/flip
-                 :args     {:duration 30}}]))}])
+        [{:type   :event
+          :key    :cards/flip
+          :parent :player/selected-update
+          :args   {:duration 30}}]))}])
 
 (defn flip-cards [duration]
-  {:msg/type :animation
-   :name     :flip-cards
+  {:type :animation
+   :key  :cards/flip-animation
    :children
    (->>
     (for [r-idx (range 3)]
@@ -82,13 +94,17 @@
            [{:progress   0
              :duration   delay
              :update-gen (fn [t]
-                           {:msg/type  :update
+                           {:type      :update
+                            :key       :card/flip-wait-animation
+                            :parent    :cards/flip-animation
                             :update-fn identity})}
             {:progress 0
              :duration duration
              :update-gen
              (fn [t]
-               {:msg/type :update
+               {:type   :update
+                :key    :card/flip-animation
+                :parent :cards/flip-animation
                 :update-fn
                 (fn [{{:game/keys [segment-index]} :game
                       :as                          state}]
@@ -102,46 +118,52 @@
     (into []))})
 
 (defmethod handler-event :cards/flip
-  [{{:keys [duration]} :event/args}]
-  [(flip-cards duration)])
+  [{{:keys [duration]} :args
+    key                :key}]
+  [(assoc (flip-cards duration) :parent key)])
 
 
 (defn return-player [duration]
-  {:msg/type :animation
-   :name     :return-player
-   :steps    [{:progress 0
-               :duration duration
-               :update-gen
-               (fn [t]
-                 (let [t (animate/ease-in-out 3 t)]
-                   {:msg/type :update
-                    :update-fn
-                    (fn step [{game-state                    :game-state
-                               {:player/keys [init-pos pos]} :player
-                               :as                           state}]
-                      (if init-pos
-                        (let [delta (mapv #(* (- %2 %1) t)
-                                          init-pos
-                                          (utils/card-pos
-                                           (-> game-state last :position)))]
-                          (-> state
-                              (assoc-in [:player :player/pos] (mapv + init-pos delta))
-                              (cond-> (= t 1) (update :player dissoc :player/init-pos))))
-                        (step (assoc-in state [:player :player/init-pos] pos))))}))}]})
+  {:type  :animation
+   :key   :player/return-animation
+   :steps [{:progress 0
+            :duration duration
+            :update-gen
+            (fn [t]
+              (let [t (animate/ease-in-out 3 t)]
+                {:type   :update
+                 :key    :player/return-animation
+                 :parent :player/return-animation
+                 :update-fn
+                 (fn step [{game-state                    :game-state
+                            {:player/keys [init-pos pos]} :player
+                            :as                           state}]
+                   (if init-pos
+                     (let [delta (mapv #(* (- %2 %1) t)
+                                       init-pos
+                                       (utils/card-pos
+                                        (-> game-state last :position)))]
+                       (-> state
+                           (assoc-in [:player :player/pos] (mapv + init-pos delta))
+                           (cond-> (= t 1) (update :player dissoc :player/init-pos))))
+                     (step (assoc-in state [:player :player/init-pos] pos))))}))}]})
 
 (defmethod handler-event :player/return
-  [{{:keys [duration]} :event/args}]
-  [(return-player duration)])
+  [{{:keys [duration]} :args
+    key                :key}]
+  [(assoc (return-player duration) :parent key)])
 
 
 (defn pulse-player [duration]
-  {:msg/type   :animation
-   :name       :pulse-player
+  {:type       :animation
+   :key        :player/pulse-animation
    :steps      [{:progress 0
                  :duration (* duration 0.5)
                  :update-gen
                  (fn [t]
-                   {:msg/type :update
+                   {:type   :update
+                    :key    :player/pulse-grow-animation
+                    :parent :player/pulse-animation
                     :update-fn
                     (fn [state]
                       (assoc-in state [:player :player/pulse] t))})}
@@ -149,30 +171,36 @@
                  :duration (* duration 0.5)
                  :update-gen
                  (fn [t]
-                   {:msg/type :update
+                   {:type   :update
+                    :key    :player/pulse-shrink-animation
+                    :parent :player/pulse-animation
                     :update-fn
                     (fn [state]
                       (assoc-in state [:player :player/pulse] (Math/abs (dec t))))})}]
    :post-steps (fn [{{:game/keys [started?]} :game}]
                  (when (not started?)
-                   [#:event{:msg/type :event
-                            :key      :player/pulse
-                            :args     {:duration duration}}]))})
+                   [{:type   :event
+                     :key    :player/pulse
+                     :parent :player/pulse-animation
+                     :args   {:duration duration}}]))})
 
 (defmethod handler-event :player/pulse
-  [{{:keys [duration]} :event/args}]
-  [(pulse-player duration)])
+  [{{:keys [duration]} :args
+    key                :key}]
+  [(assoc (pulse-player duration) :parent key)])
 
 
 (defn slide-field [duration]
-  {:msg/type   :animation
-   :name       :slide-field
+  {:type       :animation
+   :key        :field/slide-animation
    :steps      [{:progress 0
                  :duration duration
                  :update-gen
                  (fn [t]
                    (let [t (animate/ease-in-out 3 t)]
-                     {:msg/type :update
+                     {:type   :update
+                      :key    :field/slide-animation
+                      :parent :field/slide-animation
                       :update-fn
                       (fn step [{{:field/keys [init-y y]} :field
                                  :as                      state}]
@@ -184,18 +212,24 @@
                           (step (assoc-in state [:field :field/init-y]
                                           (get-in state [:field :field/y])))))}))}]
    :post-steps (fn [_]
-                 [#:event{:msg/type :event
-                          :key      :cards/flip
-                          :args     {:duration 30}}])})
+                 [{:type   :event
+                   :key    :cards/flip
+                   :parent :field/slide-animation
+                   :args   {:duration 30}}])})
 
 (defmethod handler-event :field/slide
-  [{{:keys [duration]} :event/args}]
-  [(slide-field duration)])
+  [{{:keys [duration]} :args
+    key                :key}]
+  [(assoc (slide-field duration) :parent key)])
 
 (defmethod handler-event :game/next-segment
-  [{{:keys [duration]} :event/args}]
-  [{:msg/type  :update
+  [{{:keys [duration]} :args
+    key                :key}]
+  [{:type      :update
+    :key       :game/round-update
+    :parent    key
     :update-fn #(update-in % [:game :game/segment-index] inc)}
-   #:event{:msg/type :event
-           :key      :field/slide
-           :args     {:duration 60}}])
+   {:type   :event
+    :key    :field/slide
+    :parent :key
+    :args   {:duration 60}}])
