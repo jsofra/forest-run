@@ -36,9 +36,11 @@
                             (into {}))
                 :y     (- (* (+ utils/card-h utils/card-spacing) 3)
                           (/ utils/card-h 2))}}))
-  (async/put! msg-chan {:type :event
-                        :key  :player/pulse
-                        :args {:duration 120}}))
+  (async/put! msg-chan {:type   :event
+                        :key    :player/pulse
+                        :parent {:type :start
+                                 :key  :game/start}
+                        :args   {:duration 120}}))
 
 (defonce  all-events (atom []))
 
@@ -51,9 +53,9 @@
           (recur (update elements (:type element) conj element))))
       elements)))
 
-(defn put-all! [chan msgs]
+(defn put-all! [chan msgs parent]
   (doseq [msg msgs]
-    (async/put! chan msg)))
+    (async/put! chan (assoc msg :parent parent))))
 
 (defn game-handler [delta-time]
 
@@ -65,29 +67,24 @@
          animations :animation} (take-all! msg-chan [:event
                                                      :update
                                                      :animation])
-
-        new-animations (mapv (partial animate/apply-animation delta-time)
-                             animations)
-
-        all-updates (seq (concat updates (map :update new-animations)))]
+        all-updates             (seq updates)]
 
     (doseq [e events]
-      (put-all! msg-chan (events/handler-event e)))
+      (put-all! msg-chan (events/handler-event e) e))
 
     ;; process any animations
-    (doseq [a new-animations]
-      (when (or (seq (:children a)) (seq (dissoc a :update :children)))
-        (async/put! msg-chan a))
+    (doseq [a animations]
+      (put-all! msg-chan (animate/apply-animation delta-time a) a)
 
       (when (and (:post-steps a) (not (:steps a)))
-        (put-all! msg-chan ((:post-steps a) @state))))
+        (put-all! msg-chan ((:post-steps a) @state) a)))
 
     ;; process all the updates
     (when all-updates
       (let [[old new] (swap-vals! state (apply comp (map :update-fn all-updates)))]
-        (doseq [reaction (map :reaction all-updates)]
-          (when reaction
-            (put-all! msg-chan (reaction old new))))))))
+        (doseq [update all-updates]
+          (when (:reaction update)
+            (put-all! msg-chan ((:reaction update) old new) update)))))))
 
 (defonce ticker (atom nil))
 

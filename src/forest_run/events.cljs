@@ -7,10 +7,9 @@
 (defmulti handler-event (fn [e] (:key e)))
 
 (defmethod handler-event :player/move
-  [{:keys [event key]}]
+  [{:keys [event]}]
   [{:type      :update
     :key       :player/move-update
-    :parent    key
     :update-fn #(cond-> %
                   (-> % :player :player/selected?)
                   (utils/update-player
@@ -22,11 +21,9 @@
                             event.data.originalEvent.movementY]))))}])
 
 (defmethod handler-event :player/set-pos
-  [{{:keys [pos index]} :args
-    key                 :key}]
+  [{{:keys [pos index]} :args}]
   [{:type      :update
     :key       :game/make-move-update
-    :parent    key
     :update-fn #(-> %
                     (utils/assoc-player :player/pos pos)
                     (update :game-state
@@ -38,7 +35,6 @@
   [{:keys [key]}]
   [{:type      :update
     :key       :player/deselected-update
-    :parent    key
     :update-fn #(utils/assoc-player % :player/selected? false)
     :reaction
     (fn [old-state new-state]
@@ -55,19 +51,16 @@
         (if pos
           [{:type   :event
             :key    :player/set-pos
-            :parent :player/deselected-udpate
             :args   {:pos   pos
                      :index index}}]
           [{:type   :event
             :key    :player/return
-            :parent :player/deselected-udpate
             :args   {:duration 30}}])))}])
 
 (defmethod handler-event :player/down
   [{:keys [key]}]
   [{:type   :update
     :key    :player/selected-update
-    :parent key
     :update-fn
     #(if (get-in % [:game :game/started?])
        (utils/assoc-player % :player/selected? true)
@@ -78,7 +71,6 @@
                  (get-in new-state [:game :game/started?]))
         [{:type   :event
           :key    :cards/flip
-          :parent :player/selected-update
           :args   {:duration 30}}]))}])
 
 (defn flip-cards [duration]
@@ -96,7 +88,6 @@
              :update-gen (fn [t]
                            {:type      :update
                             :key       :card/flip-wait-animation
-                            :parent    :cards/flip-animation
                             :update-fn identity})}
             {:progress 0
              :duration duration
@@ -104,7 +95,6 @@
              (fn [t]
                {:type   :update
                 :key    :card/flip-animation
-                :parent :cards/flip-animation
                 :update-fn
                 (fn [{{:game/keys [segment-index]} :game
                       :as                          state}]
@@ -118,9 +108,8 @@
     (into []))})
 
 (defmethod handler-event :cards/flip
-  [{{:keys [duration]} :args
-    key                :key}]
-  [(assoc (flip-cards duration) :parent key)])
+  [{{:keys [duration]} :args}]
+  [(flip-cards duration)])
 
 
 (defn return-player [duration]
@@ -133,7 +122,6 @@
               (let [t (animate/ease-in-out 3 t)]
                 {:type   :update
                  :key    :player/return-animation
-                 :parent :player/return-animation
                  :update-fn
                  (fn step [{game-state                    :game-state
                             {:player/keys [init-pos pos]} :player
@@ -149,9 +137,8 @@
                      (step (assoc-in state [:player :player/init-pos] pos))))}))}]})
 
 (defmethod handler-event :player/return
-  [{{:keys [duration]} :args
-    key                :key}]
-  [(assoc (return-player duration) :parent key)])
+  [{{:keys [duration]} :args}]
+  [(return-player duration)])
 
 
 (defn pulse-player [duration]
@@ -163,7 +150,6 @@
                  (fn [t]
                    {:type   :update
                     :key    :player/pulse-grow-animation
-                    :parent :player/pulse-animation
                     :update-fn
                     (fn [state]
                       (assoc-in state [:player :player/pulse] t))})}
@@ -173,7 +159,6 @@
                  (fn [t]
                    {:type   :update
                     :key    :player/pulse-shrink-animation
-                    :parent :player/pulse-animation
                     :update-fn
                     (fn [state]
                       (assoc-in state [:player :player/pulse] (Math/abs (dec t))))})}]
@@ -181,13 +166,11 @@
                  (when (not started?)
                    [{:type   :event
                      :key    :player/pulse
-                     :parent :player/pulse-animation
                      :args   {:duration duration}}]))})
 
 (defmethod handler-event :player/pulse
-  [{{:keys [duration]} :args
-    key                :key}]
-  [(assoc (pulse-player duration) :parent key)])
+  [{{:keys [duration]} :args}]
+  [(pulse-player duration)])
 
 
 (defn slide-field [duration]
@@ -200,7 +183,6 @@
                    (let [t (animate/ease-in-out 3 t)]
                      {:type   :update
                       :key    :field/slide-animation
-                      :parent :field/slide-animation
                       :update-fn
                       (fn step [{{:field/keys [init-y y]} :field
                                  :as                      state}]
@@ -214,22 +196,17 @@
    :post-steps (fn [_]
                  [{:type   :event
                    :key    :cards/flip
-                   :parent :field/slide-animation
                    :args   {:duration 30}}])})
 
 (defmethod handler-event :field/slide
-  [{{:keys [duration]} :args
-    key                :key}]
-  [(assoc (slide-field duration) :parent key)])
+  [{{:keys [duration]} :args}]
+  [(slide-field duration)])
 
 (defmethod handler-event :game/next-segment
-  [{{:keys [duration]} :args
-    key                :key}]
+  [{{:keys [duration]} :args}]
   [{:type      :update
     :key       :game/round-update
-    :parent    key
     :update-fn #(update-in % [:game :game/segment-index] inc)}
    {:type   :event
     :key    :field/slide
-    :parent :key
     :args   {:duration 60}}])

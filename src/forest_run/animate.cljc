@@ -13,23 +13,20 @@
 
 (defn apply-animation-steps
   [delta-time {[{:keys [progress duration update-gen]}] :steps
-               :as node}]
+               :as                                      node}]
   (let [t           (min (/ progress duration) 1)
-        step-update (update-gen t)]
-    (if (< t 1)
-      (-> node
-          (update-in [:steps 0 :progress]
-                     #(+ % delta-time))
-          (assoc :update step-update))
-      (if (> (count (:steps node)) 1)
-        (apply-animation-steps
-         (- progress duration)
-         (-> node
-             (update :steps #(into [] (rest %)))
-             (assoc :update step-update)))
-        (-> node
-            (dissoc :steps)
-            (assoc :update step-update))))))
+        step-update (update-gen t)
+        new-msgs    (if (< t 1)
+                      [(update-in node [:steps 0 :progress] #(+ % delta-time))
+                       step-update]
+                      (if (> (count (:steps node)) 1)
+                        (into (apply-animation-steps
+                               (- progress duration)
+                               (update node :steps #(into [] (rest %))))
+                              [step-update])
+                        [(dissoc node :steps)
+                         step-update]))]
+    (mapv #(assoc % :parent node) new-msgs)))
 
 (defn comp-reactions [reactions]
   (fn [& args]
@@ -40,13 +37,18 @@
   [delta-time {:keys [key steps children] :as node}]
   (if steps
     (apply-animation-steps delta-time node)
-    (let [children     (mapv (partial apply-animation delta-time) children)
-          new-children (mapv #(dissoc % :update) children)
-          updates      (mapv :update children)
-          reactions    (map :reaction updates)]
-      (cond-> {:type   :animation
-               :key    key
-               :update {:type      :update
-                        :update-fn (apply comp (mapv :update-fn updates))}}
-        (seq new-children) (assoc :children new-children)
-        (seq reactions)    (assoc-in [:update :reaction] (comp-reactions reactions))))))
+    (if (seq children)
+      (let [child-msgs           (->> children
+                                      (map (partial apply-animation delta-time))
+                                      (apply concat))
+            {updates      true
+             new-children false} (group-by #(= (:type %) :update) child-msgs)
+            reactions            (map :reaction updates)]
+        (into (if (seq new-children)
+                [{:type     :animation
+                  :key      key
+                  :parent   node
+                  :children new-children}]
+                [])
+              updates))
+      [])))
