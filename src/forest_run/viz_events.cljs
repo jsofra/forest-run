@@ -6,7 +6,7 @@
 (s/def ::graphviz/shape #{"record" "box" "oval" "plaintext" "circle" "diamond"
                           "trapezium" "square" "folder" "doublecircle" "point"
                           "Mcircle" "cds" "tripleoctagon" "rarrow" "cylinder"
-                          "star"})
+                          "star" "Msquare" "rnastab" "parallelogram"})
 
 (defn clean-name
   "Turn the qualified keyword into a graphviz friendly name"
@@ -32,16 +32,29 @@
           (map (fn [event]
                  (let [node-name (clean-name (:key event))]
                    (merge
-                    {::graphviz/name node-name
+                    {::graphviz/name  node-name
                      ::graphviz/label node-name}
                     (case (:type event)
-                      :event     {::graphviz/shape "diamond"}
-                      :update    {::graphviz/shape "cylinder"}
-                      :animation {::graphviz/shape "tripleoctagon"}))))
+                      :event     {::graphviz/shape     "cds"
+                                  ::graphviz/style     "filled"
+                                  ::graphviz/fillcolor "#F4D03F"}
+                      :update    {::graphviz/shape     "cylinder"
+                                  ::graphviz/style     "filled"
+                                  ::graphviz/fillcolor "#85C1E9"}
+                      :animation {::graphviz/shape     "tripleoctagon"
+                                  ::graphviz/style     "filled"
+                                  ::graphviz/fillcolor "#C39BD3"}))))
                (keys events-map))
-          [{::graphviz/name "GameStart"
-            ::graphviz/label "GameStart"
-            ::graphviz/shape "Mcircle"}]))
+          [{::graphviz/name      "GameStart"
+            ::graphviz/label     "GameStart"
+            ::graphviz/shape     "oval"
+            ::graphviz/style     "filled"
+            ::graphviz/fillcolor "#2ECC71"}
+           {::graphviz/name      (clean-name :game/UI)
+            ::graphviz/label     (clean-name :game/UI)
+            ::graphviz/shape     "parallelogram"
+            ::graphviz/style     "filled"
+            ::graphviz/fillcolor "#D6DBDF"}]))
 
 (defn graph-events! [events-map]
   (let [elements (events-map->elements events-map)

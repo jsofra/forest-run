@@ -46,7 +46,7 @@
   (update events-map
           (select-keys event [:type :key])
           #(into (set %1) (if %2 [%2] []))
-          (:key parent)))
+          (or (:key parent) :game/UI)))
 
 (defonce events-map (atom {}))
 
