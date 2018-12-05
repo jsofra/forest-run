@@ -42,20 +42,29 @@
                                  :key  :game/start}
                         :args   {:duration 120}}))
 
-(defonce  all-events (atom []))
+(defn compact-events [events-map {:keys [parent] :as event}]
+  (update events-map
+          (select-keys event [:type :key])
+          #(into (set %1) (if %2 [%2] []))
+          (:key parent)))
+
+(defonce events-map (atom {}))
+
+(comment
+  (viz-events/graph-events! @events-map))
 
 (defn take-all! [chan msg-keys]
   (loop [elements (zipmap msg-keys (repeat []))]
     (if-let [element (async/poll! chan)]
       (do
-        (swap! all-events conj element)
+        (swap! events-map compact-events element)
         (if (contains? (set msg-keys) (:type element))
           (recur (update elements (:type element) conj element))))
       elements)))
 
 (defn put-all! [chan msgs parent]
   (doseq [msg msgs]
-    (async/put! chan (assoc msg :parent parent))))
+    (async/put! chan (assoc msg :parent (dissoc parent :parent)))))
 
 (defn game-handler [delta-time]
 
@@ -66,8 +75,7 @@
          updates    :update
          animations :animation} (take-all! msg-chan [:event
                                                      :update
-                                                     :animation])
-        all-updates             (seq updates)]
+                                                     :animation])]
 
     (doseq [e events]
       (put-all! msg-chan (events/handler-event e) e))
@@ -80,9 +88,9 @@
         (put-all! msg-chan ((:post-steps a) @state) a)))
 
     ;; process all the updates
-    (when all-updates
-      (let [[old new] (swap-vals! state (apply comp (map :update-fn all-updates)))]
-        (doseq [update all-updates]
+    (when (seq updates)
+      (let [[old new] (swap-vals! state (apply comp (map :update-fn updates)))]
+        (doseq [update updates]
           (when (:reaction update)
             (put-all! msg-chan ((:reaction update) old new) update)))))))
 

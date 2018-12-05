@@ -26,7 +26,7 @@
                               [step-update])
                         [(dissoc node :steps)
                          step-update]))]
-    (mapv #(assoc % :parent node) new-msgs)))
+    (mapv #(assoc % :parent (dissoc node :parent)) new-msgs)))
 
 (defn comp-reactions [reactions]
   (fn [& args]
@@ -47,7 +47,7 @@
         (into (if (seq new-children)
                 [{:type     :animation
                   :key      key
-                  :parent   node
+                  :parent   (dissoc node :parent)
                   :children new-children}]
                 [])
               updates))

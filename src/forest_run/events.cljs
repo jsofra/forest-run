@@ -87,14 +87,14 @@
              :duration   delay
              :update-gen (fn [t]
                            {:type      :update
-                            :key       :card/flip-wait-animation
+                            :key       :card/flip-wait-update
                             :update-fn identity})}
             {:progress 0
              :duration duration
              :update-gen
              (fn [t]
                {:type   :update
-                :key    :card/flip-animation
+                :key    :card/flip-update
                 :update-fn
                 (fn [{{:game/keys [segment-index]} :game
                       :as                          state}]
@@ -121,7 +121,7 @@
             (fn [t]
               (let [t (animate/ease-in-out 3 t)]
                 {:type   :update
-                 :key    :player/return-animation
+                 :key    :player/return-update
                  :update-fn
                  (fn step [{game-state                    :game-state
                             {:player/keys [init-pos pos]} :player
@@ -149,7 +149,7 @@
                  :update-gen
                  (fn [t]
                    {:type   :update
-                    :key    :player/pulse-grow-animation
+                    :key    :player/pulse-grow-update
                     :update-fn
                     (fn [state]
                       (assoc-in state [:player :player/pulse] t))})}
@@ -158,7 +158,7 @@
                  :update-gen
                  (fn [t]
                    {:type   :update
-                    :key    :player/pulse-shrink-animation
+                    :key    :player/pulse-shrink-update
                     :update-fn
                     (fn [state]
                       (assoc-in state [:player :player/pulse] (Math/abs (dec t))))})}]
