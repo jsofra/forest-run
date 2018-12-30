@@ -50,9 +50,6 @@
 
 (defonce events-map (atom {}))
 
-(comment
-  (viz-events/graph-events! @events-map))
-
 (defn take-all! [chan msg-keys]
   (loop [elements (zipmap msg-keys (repeat []))]
     (if-let [element (async/poll! chan)]
@@ -115,8 +112,9 @@
 (defn start-renderer! []
   (let [element (.getElementById js/document "app")]
     (when @state (impi/mount :game (render-state @state) element))
-    (add-watch state ::renderer (fn [_ _ _ s]
-                                  (impi/mount :game (render-state s) element)))))
+    (add-watch state ::renderer
+               (fn [_ _ _ s]
+                 (impi/mount :game (render-state s) element)))))
 
 (defn stop-renderer! []
   (remove-watch state ::renderer))
@@ -143,4 +141,5 @@
   (start))
 
 (comment
-  (reset))
+  (reset)
+  (viz-events/graph-events! @events-map))

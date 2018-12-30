@@ -4,7 +4,7 @@
             [forest-run.animate :as animate]
             [forest-run.core :as core]))
 
-(defmulti handler-event (fn [e] (:key e)))
+(defmulti handler-event :key)
 
 (defmethod handler-event :player/move
   [{:keys [event]}]
@@ -49,16 +49,16 @@
                                        (map vector valid-positions (vals valid)))
             [[pos index _]]       (filter #(>= 30 (last %)) max-diffs)]
         (if pos
-          [{:type   :event
-            :key    :player/set-pos
-            :args   {:pos   pos
-                     :index index}}]
-          [{:type   :event
-            :key    :player/return
-            :args   {:duration 30}}])))}])
+          [{:type :event
+            :key  :player/set-pos
+            :args {:pos   pos
+                   :index index}}]
+          [{:type :event
+            :key  :player/return
+            :args {:duration 30}}])))}])
 
 (defmethod handler-event :player/down
-  [{:keys [key]}]
+  [_]
   [{:type   :update
     :key    :player/selected-update
     :update-fn
@@ -148,8 +148,8 @@
                  :duration (* duration 0.5)
                  :update-gen
                  (fn [t]
-                   {:type   :update
-                    :key    :player/pulse-grow-update
+                   {:type :update
+                    :key  :player/pulse-grow-update
                     :update-fn
                     (fn [state]
                       (assoc-in state [:player :player/pulse] t))})}
@@ -157,16 +157,16 @@
                  :duration (* duration 0.5)
                  :update-gen
                  (fn [t]
-                   {:type   :update
-                    :key    :player/pulse-shrink-update
+                   {:type :update
+                    :key  :player/pulse-shrink-update
                     :update-fn
                     (fn [state]
                       (assoc-in state [:player :player/pulse] (Math/abs (dec t))))})}]
    :post-steps (fn [{{:game/keys [started?]} :game}]
                  (when (not started?)
-                   [{:type   :event
-                     :key    :player/pulse
-                     :args   {:duration duration}}]))})
+                   [{:type :event
+                     :key  :player/pulse
+                     :args {:duration duration}}]))})
 
 (defmethod handler-event :player/pulse
   [{{:keys [duration]} :args}]
@@ -181,8 +181,8 @@
                  :update-gen
                  (fn [t]
                    (let [t (animate/ease-in-out 3 t)]
-                     {:type   :update
-                      :key    :field/slide-animation
+                     {:type :update
+                      :key  :field/slide-animation
                       :update-fn
                       (fn step [{{:field/keys [init-y y]} :field
                                  :as                      state}]
@@ -194,9 +194,9 @@
                           (step (assoc-in state [:field :field/init-y]
                                           (get-in state [:field :field/y])))))}))}]
    :post-steps (fn [_]
-                 [{:type   :event
-                   :key    :cards/flip
-                   :args   {:duration 30}}])})
+                 [{:type :event
+                   :key  :cards/flip
+                   :args {:duration 30}}])})
 
 (defmethod handler-event :field/slide
   [{{:keys [duration]} :args}]
